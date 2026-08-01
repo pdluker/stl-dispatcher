@@ -1,0 +1,60 @@
+{
+  "name": "stl-dispatcher",
+  "main": "dispatcher.js",
+  "compatibility_date": "2026-07-02",
+  "ai": { "binding": "AI" },
+  "kv_namespaces": [
+    {
+      "binding": "STATUS_KV",
+      "id": "208b3be26f2741b9988350d83fc77036"
+    },
+    {
+      "binding": "SPACE_KV",
+      "id": "6ceb0fea2ef3468c9709e9335455f4cd"
+    },
+    {
+      "binding": "EARTH_KV",
+      "id": "cc679a87f521416c9b3d985ffe5f4b78"
+    },
+    {
+      "binding": "PODCAST_KV",
+      "id": "d0d7565915314f7d85ced9caf04d21bf"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "POD_BUCKET",
+      "bucket_name": "pod-audio"
+    }
+  ],
+  // Observability was enabled via the dashboard (Logs + Traces, both 100%
+  // sampling) during the Aug 1-2 invocation-overload investigation -- it was
+  // OFF by default, which is why there was no historical per-invocation
+  // record to inspect after three silent scheduled-run failures. Declared
+  // here explicitly so a future `wrangler deploy` from this file can't
+  // silently revert it back to disabled -- that exact drift (dashboard says
+  // enabled, file says disabled) is what the orange "update your Wrangler
+  // config" banner was warning about when this was fixed.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
+"triggers": {
+  // No change needed here for Task 10 (music/sports Sunday refresh) — this
+  // cron already fires daily, which includes Sunday. MUSIC_SECRET and
+  // SPORTS_SECRET are plain secrets (not declared in this file); set them
+  // with:
+  //   wrangler secret put MUSIC_SECRET   (same value as stl-music's refresh secret)
+  //   wrangler secret put SPORTS_SECRET  (same value as stl-sports' refresh secret)
+  "crons": ["0 11 * * *"]
+}
+}
