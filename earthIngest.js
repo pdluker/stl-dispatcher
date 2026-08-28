@@ -11,7 +11,22 @@
 //   3. USGS FDSN Yellowstone bbox query (24h) — required, never skipped
 //      (2026-07-23: added as a second fixed-region watch strip, same
 //      pattern as NMSZ, independent failure)
-//   4. NASA EONET events (days=2)           — best-effort
+//   4. NASA EONET events (status=open only) — best-effort
+//      (2026-08-26: dropped the days=2 recency filter that used to be on
+//      this query. That parameter was silently excluding wildfires whose
+//      most recent geometry update was more than 2 days old, even when
+//      EONET still marked them "open" (closed: null) - i.e. still an
+//      active, ongoing incident. Concrete case: the Hawk Fire near Reno,
+//      NV (EONET_23218) sat unlisted on the dashboard for days during an
+//      active evacuation, purely because its last geometry ping was
+//      >2 days old by the time anyone re-checked, not because it had
+//      closed or because EONET didn't have it. Category matching itself
+//      (parseEonetEvents below, comparing against string ids like
+//      "wildfires") was already correct for the v3 API and was never the
+//      problem - the recency window was. status=open plus the
+//      EONET_FETCH_LIMIT/EONET_DISPLAY_LIMIT/EONET_WHY_PER_CATEGORY caps
+//      below now bound the result set the way days=2 used to, without
+//      silently dropping events that are still genuinely open.)
 //   5. GVP weekly RSS                       — best-effort, and only
 //      fetched at all if the cached copy is >6 days old (it's a
 //      weekly report; re-fetching daily wastes a subrequest for
@@ -36,7 +51,10 @@
 // design, the briefing runs every day regardless of whether anything
 // significant happened (2026-07-23) — "today was quiet" is itself
 // useful information, matching space-ingest's accepted one-call/day
-// cost model.
+// cost model. As of 2026-08-04, whyItMatters items also include up to
+// 3 top news stories per category (ocean/atmosphere/geography, ~9 max)
+// alongside quakes/wildfires, so news stories on the frontend get a
+// genuine "so what" sentence instead of only a raw RSS excerpt.
 //
 // Also computes the Earth Pulse Score (2026-07-23) — a same-day
 // activity-level snapshot built ONLY from categories this pipeline
@@ -68,6 +86,18 @@ const GVP_MAX_AGE_MS = 6 * 24 * 3600 * 1000; // re-fetch GVP at most ~weekly
 // fixes were deployed but the cached pre-fix data kept getting served
 // because only time-based staleness was checked, not a schema change.
 const GVP_SCHEMA_VERSION = 2;
+
+// EONET result-set caps (2026-08-26, added alongside the days=2 removal
+// above). Previously the days=2 query parameter did double duty as both
+// "is this event still relevant" (wrong - status=open already answers
+// that) and "keep the result set/payload/Haiku input a sane size" (right
+// goal, wrong mechanism). These three constants now do that second job
+// explicitly, the same way BBOX_EVENT_LIMIT already guards the USGS bbox
+// queries against a swarm-day blowing up the payload, and the same way
+// NEWS_WHY_PER_CATEGORY already caps news items going into the Haiku call.
+const EONET_FETCH_LIMIT = 150;    // server-side cap via EONET's own `limit` param
+const EONET_DISPLAY_LIMIT = 30;   // per-category cap on what's stored/shown, newest-first
+const EONET_WHY_PER_CATEGORY = 5; // per-category cap on what reaches the Haiku call
 
 // ---------- small utilities ----------
 
@@ -430,8 +460,14 @@ const INTELLIGENCE_SYSTEM = sanitizeAscii(
   "referencePool - for example 'ongoing eruptive activity at Kilauea{{ref:" +
   "gvp-kilauea-...}}'. Only use ids that literally appear in referencePool - " +
   "never invent or guess an id, and do not add a marker for a general " +
-  "statement that isn't citing one specific item. Respond with ONLY a JSON " +
-  "object of this exact shape: " +
+  "statement that isn't citing one specific item. For each item in the " +
+  "provided items list, including any item whose kind starts with 'news-', " +
+  "write a genuine 'why this matters' or 'so what' sentence in whyItMatters - " +
+  "explain the real-world significance or implication of the story, do not " +
+  "just restate or rephrase its headline; if you cannot identify a real " +
+  "implication beyond the headline, omit that item's key from whyItMatters " +
+  "entirely rather than filling it with a restatement. Respond with ONLY a " +
+  "JSON object of this exact shape: " +
   '{"briefing": "2-3 sentence plain-language summary of today\'s global ' +
   'activity, mentioning specific real numbers/locations from the input where ' +
   'relevant, with {{ref:ID}} markers after specific named mentions", ' +
@@ -453,7 +489,7 @@ async function callIntelligence(env, counts, items, referencePool) {
   }
   const body = {
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 900,
+    max_tokens: 1300,
     system: [{ type: "text", text: INTELLIGENCE_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: buildIntelligenceUserPrompt(counts, items, referencePool || []) }],
   };
@@ -585,14 +621,24 @@ async function runEarthIngest(env) {
   }
 
   // ---- best-effort source: EONET ----
+  // 2026-08-26: query is now status=open only (no days=N recency filter -
+  // see header comment for the incident that caused this and why
+  // category-id matching below was never actually the problem). Results
+  // are sorted newest-first and capped per category via
+  // EONET_DISPLAY_LIMIT so removing the days window doesn't let an
+  // unusually active wildfire/storm day blow up payload size the way
+  // BBOX_EVENT_LIMIT already guards against for USGS swarms.
   let wildfires = [], storms = [], ice = [];
   try {
-    const res = await fetchWithTimeout("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&days=2");
+    const res = await fetchWithTimeout(
+      "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=" + EONET_FETCH_LIMIT
+    );
     if (!res.ok) throw new Error("EONET returned " + res.status);
     const json = await res.json();
-    wildfires = parseEonetEvents(json, "wildfires");
-    storms = parseEonetEvents(json, "severeStorms");
-    ice = parseEonetEvents(json, "seaLakeIce");
+    const newestFirst = (a, b) => b.date - a.date;
+    wildfires = parseEonetEvents(json, "wildfires").sort(newestFirst).slice(0, EONET_DISPLAY_LIMIT);
+    storms = parseEonetEvents(json, "severeStorms").sort(newestFirst).slice(0, EONET_DISPLAY_LIMIT);
+    ice = parseEonetEvents(json, "seaLakeIce").sort(newestFirst).slice(0, EONET_DISPLAY_LIMIT);
   } catch (err) {
     warnings.push("EONET fetch failed (degrading to empty): " + err.message);
   }
@@ -676,7 +722,32 @@ async function runEarthIngest(env) {
   significantQuakes.forEach((q) =>
     whyItemsInput.push({ id: q.id, kind: "earthquake", summary: q.place + ", M" + q.mag })
   );
-  wildfires.forEach((w) => whyItemsInput.push({ id: w.id, kind: "wildfire", summary: w.title }));
+  // Capped via EONET_WHY_PER_CATEGORY (2026-08-26): wildfires is no longer
+  // implicitly bounded by the old days=2 recency window, so on a genuinely
+  // busy wildfire day (dozens of events nationwide, same order of magnitude
+  // as the Reno-area Hawk Fire incident that prompted this fix) this list
+  // needs its own explicit cap - otherwise every open wildfire in the
+  // country goes into the Haiku call, the same class of uncapped-input cost
+  // risk already documented and fixed for fire-api's topic loop. wildfires
+  // is already sorted newest-first above, so slice(0, N) keeps the most
+  // recently updated fires, not an arbitrary subset.
+  wildfires.slice(0, EONET_WHY_PER_CATEGORY).forEach((w) =>
+    whyItemsInput.push({ id: w.id, kind: "wildfire", summary: w.title })
+  );
+
+  // News items (2026-08-04): previously never sent to Haiku at all, so
+  // whyItMatters had no entry for any news story and the frontend could
+  // only show the raw RSS <description> excerpt - not real "why it
+  // matters" analysis. Capped per category (top 3, already newest-first
+  // from fetchNewsFeeds' sort) to keep this call's token cost bounded -
+  // same "accepted one-call/day" cost model as the rest of this pipeline,
+  // not an open-ended per-headline expense.
+  const NEWS_WHY_PER_CATEGORY = 3;
+  Object.keys(news).forEach((category) => {
+    (news[category] || []).slice(0, NEWS_WHY_PER_CATEGORY).forEach((n) =>
+      whyItemsInput.push({ id: n.id, kind: "news-" + category, summary: n.title })
+    );
+  });
 
   const referencePool = buildReferencePool({ significantQuakes, wildfires, storms, ice, volcanoes, news });
 

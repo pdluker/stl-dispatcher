@@ -154,8 +154,25 @@ export async function reconcile(env, data) {
   const declaredCrons = [
     { worker: "stluker", expected: "0 9 " + "*/3 * *" },
     { worker: "stl-music", expected: "0 10 * * 1" },
-    { worker: "stl-dispatcher", expected: "0 11 * * *" },
-    { worker: "stl-bucket", expected: "0 14 * * 5" },
+    // REPLACED 2026-08-23: the Aug 22 schools-outage investigation resulted
+    // in splitting EVERY day-gated task in dispatcher.js onto its own cron +
+    // its own dedicated runXOnly() function, the same pattern the podcast
+    // fix used back on Aug 6 (own invocation = own fresh subrequest budget,
+    // and a task that fails is independently visible instead of hiding
+    // inside one shared runAll()). stl-dispatcher now has EIGHT crons, not
+    // two -- this is the exact list from wrangler.jsonc as of that change.
+    // Two entries below (bucket, schools) were previously modeled as
+    // separate Workers' own triggers or as gates inside runAll() -- they are
+    // now stl-dispatcher crons instead, so the old standalone "stl-bucket"
+    // entry that used to sit below this block has been folded in here.
+    { worker: "stl-dispatcher", expected: "0 11 * * *" },            // keepalive + statusSync
+    { worker: "stl-dispatcher", expected: "5 11 * * FRI" },          // stlBucket
+    { worker: "stl-dispatcher", expected: "10 11 * * *" },           // spaceIngest
+    { worker: "stl-dispatcher", expected: "15 11 * * *" },           // earthIngest
+    { worker: "stl-dispatcher", expected: "20 11 * * MON,WED,THU" }, // intelRefresh
+    { worker: "stl-dispatcher", expected: "25 11 * * MON,WED,FRI" }, // schoolsRefresh
+    { worker: "stl-dispatcher", expected: "30 11 * * *" },           // podcastIngest
+    { worker: "stl-dispatcher", expected: "35 11 * * SUN" },         // music + sports pulse
     // stl-sports intentionally omitted until its expression is confirmed (T-10)
   ];
   const trackedWorkers = [
@@ -174,6 +191,30 @@ export async function reconcile(env, data) {
     { job: "stl-dispatcher:keepalive", maxAgeHours: 24 * 6 }, // every 5 days + grace
     { job: "stl-dispatcher:status-sync", maxAgeHours: 30 },   // daily + grace
     { job: "stl-bucket:refresh", maxAgeHours: 24 * 8 },       // weekly (Friday) + 1-day grace
+    // ADDED 2026-08-12: the three daily ingests were never monitored here.
+    // /health already evaluates all three with these same windows, but /health
+    // is a pull -- someone has to look. These entries make a stale ingest
+    // surface as a CRITICAL autoRecommendation on the status board instead.
+    // podcast-ingest matters most: it's the only user-facing daily deliverable,
+    // it now runs on its own separate cron, and both times it broke (Aug 1-2,
+    // Aug 6) it was noticed by a human missing the episode, not by any check.
+    { job: "stl-dispatcher:podcast-ingest", maxAgeHours: 30 }, // daily; grace for TTS/upload
+    { job: "stl-dispatcher:space-ingest", maxAgeHours: 30 },   // daily + grace
+    { job: "stl-dispatcher:earth-ingest", maxAgeHours: 30 },   // daily + grace
+    // ADDED 2026-08-23: four more confirmed via a literal grep of every
+    // recordHeartbeat() call in dispatcher.js (not assumed by naming
+    // convention -- two of these don't follow the "stl-dispatcher:" prefix
+    // the others use, which is exactly why this was checked directly rather
+    // than guessed). schools:refresh is the specific job that was missing
+    // when schools.stluker.com went 10 days without updating and nothing
+    // paged anyone -- that gap is what started the Aug 22 investigation that
+    // led to every task getting its own cron in the first place. Closing it
+    // here is the actual fix for that root cause, not just documentation of
+    // it.
+    { job: "intel:refresh", maxAgeHours: 24 * 5 },   // Mon/Wed/Thu; longest real gap is Thu->Mon (96h) + grace
+    { job: "schools:refresh", maxAgeHours: 24 * 4 }, // Mon/Wed/Fri; longest real gap is Fri->Mon (72h) + grace
+    { job: "stl-music:pulse", maxAgeHours: 24 * 8 },  // weekly (Sunday) + 1-day grace, same pattern as stl-bucket
+    { job: "stl-sports:pulse", maxAgeHours: 24 * 8 }, // weekly (Sunday) + 1-day grace, same pattern as stl-bucket
   ];
 
   const findings = [

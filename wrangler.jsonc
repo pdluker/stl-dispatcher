@@ -2,6 +2,37 @@
   "name": "stl-dispatcher",
   "main": "dispatcher.js",
   "compatibility_date": "2026-07-02",
+  // Declared explicitly Aug 6, 2026 -- without this key, `wrangler deploy`
+  // silently defaults workers_dev to true and re-enables the unprotected
+  // stl-dispatcher.pdluker.workers.dev route on every deploy, even after
+  // disabling it in the dashboard. Same drift class as the observability
+  // setting below (dashboard says one thing, file says another, deploy wins).
+  // dispatch.stluker.com is the only route this Worker should answer on.
+  "workers_dev": false,
+
+  // ADDED 2026-08-26: the comment above already stated this intent, but the
+  // actual routes block was missing from this file entirely -- which is
+  // exactly what the last `wrangler deploy` config-drift warning was about
+  // ("routes: dispatch.stluker.com removed"). Deploying without this block
+  // would have deleted the live custom domain route. Declared explicitly
+  // now for the same "can't silently drift" reason as workers_dev and
+  // observability below.
+  "routes": [
+    {
+      "pattern": "dispatch.stluker.com",
+      "zone_name": "stluker.com",
+      "custom_domain": true
+    }
+  ],
+
+  // ADDED 2026-08-26: not previously declared, so a bare `wrangler deploy`
+  // was silently flipping this to true (Wrangler's apparent default when
+  // the key is absent) against the dashboard's explicit false. Preview URLs
+  // aren't a secrets risk by themselves, but this Worker has no reason to
+  // expose preview deployments -- pin it to match the intended/live state
+  // rather than an undeclared default.
+  "preview_urls": false,
+
   "ai": { "binding": "AI" },
   "kv_namespaces": [
     {
@@ -47,14 +78,79 @@
       "enabled": true,
       "head_sampling_rate": 1
     }
+    // NOTE 2026-08-26: an earlier draft of this file added
+    // "redact_query_string": true here. Wrangler 4.126.0 rejected it
+    // outright ("Unexpected fields found in observability field") -- it is
+    // not a real key in this schema (checked against several live
+    // Cloudflare wrangler.jsonc examples, none show it under observability
+    // or observability.logs). Removed rather than re-guessed at a different
+    // location. If query-string redaction in Workers Logs is wanted, verify
+    // it directly against the dashboard's Observability settings first.
   },
-"triggers": {
-  // No change needed here for Task 10 (music/sports Sunday refresh) — this
-  // cron already fires daily, which includes Sunday. MUSIC_SECRET and
-  // SPORTS_SECRET are plain secrets (not declared in this file); set them
-  // with:
-  //   wrangler secret put MUSIC_SECRET   (same value as stl-music's refresh secret)
-  //   wrangler secret put SPORTS_SECRET  (same value as stl-sports' refresh secret)
-  "crons": ["0 11 * * *"]
-}
+
+  // UPDATED 2026-08-21: account upgraded from Workers Free ($0, 5 cron
+  // triggers/account, 50 subrequests/invocation) to Workers Paid ($5/mo,
+  // 250 cron triggers/account, 10,000 subrequests/invocation by default).
+  // The 5-cron ceiling is the entire reason this Worker existed as a
+  // "consolidated dispatcher" in the first place (see the top-of-file
+  // docblock in dispatcher.js for that history) -- it no longer applies.
+  //
+  // Root cause of the Aug 10-21 schoolsRefresh/intelRefresh silent outage:
+  // both tasks ran LAST inside the single daily invocation, after
+  // keepalive + statusSync + spaceIngest (~16 subrequests) + earthIngest
+  // (~10 subrequests) had already spent most of the free tier's 50-subrequest
+  // budget -- functionally identical to the Aug 1-2/Aug 6 podcastIngest
+  // incident that was fixed by giving podcast its own cron. Rather than
+  // patch this one symptom again, every previously-bundled task now gets
+  // its own dedicated cron slot below, matching the podcast fix's pattern
+  // account-wide. Day-of-week gating that used to live in dispatcher.js as
+  // `[1,3,5].includes(utcDay)` in-code checks is now expressed natively in
+  // the cron expression itself (cron's day-of-week field) -- one less place
+  // for the schedule and the code to silently drift apart.
+  //
+  // Each slot is 5 minutes apart so no two invocations compete for CPU/
+  // subrequest budget at the same instant, and each shows up as its own
+  // independent success/failure in Cloudflare's per-cron analytics --
+  // a stalled task is now visible in the dashboard itself, not just via
+  // /health.
+  // CORRECTED 2026-08-22: the first deploy attempt used standard Unix/JS
+  // weekday numbering (0=Sunday...6=Saturday, matching Date.getUTCDay(),
+  // which the old in-code utcDay checks used). Cloudflare Cron Triggers use
+  // Quartz-style numbering instead (1=Sunday...7=Saturday) -- their own docs
+  // warn about exactly this mismatch. "35 11 * * 0" was rejected outright
+  // (0 is out of Cloudflare's valid 1-7 range) but "20 11 * * 1,3,4" and
+  // "25 11 * * 1,3,5" were NOT rejected -- both are valid numbers in
+  // Cloudflare's range, they just meant Sun/Tue/Wed and Sun/Tue/Thu instead
+  // of the intended Mon/Wed/Thu and Mon/Wed/Fri. That would have silently
+  // recreated the exact stale-data bug this whole change was meant to fix,
+  // just on different days. Switched to the 3-letter names below instead --
+  // Cloudflare's own docs recommend this specifically to sidestep the
+  // 0-index-vs-1-index ambiguity entirely, and it's what event.cron will
+  // echo back verbatim in dispatcher.js's scheduled() switch, so the two
+  // files can't drift apart on this point.
+  "triggers": {
+    "crons": [
+      "0 11 * * *",            // keepalive + statusSync -- daily, unchanged
+      "5 11 * * FRI",          // stlBucket -- Friday only
+      "10 11 * * *",           // spaceIngest -- daily
+      "15 11 * * *",           // earthIngest -- daily (finishes well before podcast at :30)
+      "20 11 * * MON,WED,THU", // intelRefresh -- Mon/Wed/Thu
+      "25 11 * * MON,WED,FRI", // schoolsRefresh -- Mon/Wed/Fri
+      "30 11 * * *",           // podcastIngest -- daily, unchanged, must run after :10/:15
+      "35 11 * * SUN"          // music + sports pulse -- Sunday only
+    ]
+  },
+
+  // ADDED 2026-08-21: explicit ceilings rather than relying on the paid
+  // plan's implicit defaults (10,000 subrequests, 30s CPU). Documents the
+  // actual headroom this Worker needs and protects against any single task
+  // silently growing past a safe budget again in the future, the way the
+  // pre-split combined task did. 2,000 subrequests is >10x the heaviest
+  // single task today (spaceIngest, ~16-20 subrequests); 60s CPU is 2x the
+  // default and comfortably covers the regex/JSON-heavy parsing in earth/
+  // schools ingestion.
+  "limits": {
+    "cpu_ms": 60000,
+    "subrequests": 2000
+  }
 }

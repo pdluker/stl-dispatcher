@@ -1,2 +1,7 @@
-.wrangler/
+﻿.wrangler/
+dist/
 node_modules/
+*.bak
+*.bak-*
+.env
+.env.*
