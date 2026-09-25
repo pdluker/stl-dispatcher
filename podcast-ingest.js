@@ -1294,6 +1294,56 @@ async function tightenText(env, text, targetWords, label, diagnostics) {
   }
 }
 
+// ADDED 2026-09-25: mirrors the OUTPUT section of SYSTEM_PROMPT. Enforced
+// server-side via output_config.format so the response always parses.
+const SCRIPT_SCHEMA = {
+  type: "object",
+  properties: {
+    script: { type: "string" },
+    reflection: { type: "string" },
+    imagePrompt: { type: "string" },
+    organizingIdea: { type: "string" },
+    claims: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { text: { type: "string" }, sourceId: { type: "string" } },
+        required: ["text", "sourceId"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["script", "reflection", "imagePrompt", "organizingIdea", "claims"],
+  additionalProperties: false
+};
+
+// ADDED 2026-09-25: belt-and-braces for the structured-output guarantee.
+// The one failure actually observed (Sep 25) was raw newlines/tabs inside
+// string values; escape control characters that sit inside a string and
+// retry once before giving up.
+function parseScriptJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch (first) {
+    let out = "", inStr = false, esc = false;
+    for (const ch of text) {
+      if (inStr) {
+        if (esc) { esc = false; out += ch; continue; }
+        if (ch === "\\") { esc = true; out += ch; continue; }
+        if (ch === '"') { inStr = false; out += ch; continue; }
+        if (ch === "\n") { out += "\\n"; continue; }
+        if (ch === "\r") { out += "\\r"; continue; }
+        if (ch === "\t") { out += "\\t"; continue; }
+        out += ch;
+      } else {
+        if (ch === '"') inStr = true;
+        out += ch;
+      }
+    }
+    try { return JSON.parse(out); } catch { throw first; }
+  }
+}
+
 async function generateScript(env, digest, quote, diagnostics) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1302,7 +1352,12 @@ async function generateScript(env, digest, quote, diagnostics) {
       model: SCRIPT_MODEL,
       max_tokens: MAX_SCRIPT_TOKENS,
       thinking: { type: "adaptive" },
-      output_config: { effort: "medium" },
+      // CHANGED 2026-09-25: added format. Sonnet 5 writes the script with
+      // real paragraph breaks, and a raw newline inside a JSON string is
+      // invalid JSON -- the Sep 25 episode failed JSON.parse, fell through to
+      // the raw-text fallback, and read the entire JSON object (claims array
+      // and all) aloud. Structured outputs guarantee a parseable response.
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCRIPT_SCHEMA } },
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{
         role: "user",
@@ -1326,7 +1381,7 @@ async function generateScript(env, digest, quote, diagnostics) {
   let text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
   let script = "", reflection = "", imagePrompt = "", organizingIdea = "", claims = [];
   try {
-    const parsed = JSON.parse(text);
+    const parsed = parseScriptJson(text);
     script = parsed.script || "";
     reflection = parsed.reflection || "";
     imagePrompt = parsed.imagePrompt || "";
@@ -1339,7 +1394,15 @@ async function generateScript(env, digest, quote, diagnostics) {
     // episode, it just means tomorrow's anti-repetition check has one less
     // data point to work with.
     if (!organizingIdea) diagnostics.push({ step: "script", ok: true, note: "no organizingIdea returned -- recent-frame tracking will have a gap for today" });
-  } catch {
+  } catch (err) {
+    // CHANGED 2026-09-25: never hand JSON-shaped text to TTS. The old
+    // fallback (script = text) is what put `{"script":"...` and the whole
+    // claims array on air on Sep 25. A failed run surfaces via
+    // podcast:last-error and alerting; a JSON dump published as an episode
+    // surfaces only when someone listens to it.
+    if (/^\s*\{/.test(text) || /"claims"\s*:/.test(text)) {
+      throw new Error(`script response was unparseable JSON (stop_reason=${data.stop_reason}): ${String(err.message || err).slice(0, 120)}`);
+    }
     diagnostics.push({ step: "script", ok: true, note: "response was not valid JSON; using raw text, claims unaudited, no image prompt" });
     script = text;
   }
