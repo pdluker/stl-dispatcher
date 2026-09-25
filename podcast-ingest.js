@@ -5,7 +5,15 @@
 // cron), writes one daily "Earth and Orbit" episode: script, TTS audio, cover
 // image, RSS manifest entry, and a monthly ElevenLabs credit ledger.
 
-const SCRIPT_MODEL = "claude-haiku-4-5-20251001";
+// CHANGED 2026-09-24: Haiku 4.5 -> Sonnet 5. Haiku repeatedly ignored the
+// longer rules in SYSTEM_PROMPT (e.g. the Sep 24 reflection used the retired
+// space-patience/Earth-urgency closing move). Sonnet 5 rejects temperature/
+// top_p and assistant prefill (none used here) and runs adaptive thinking by
+// default, which counts against max_tokens -- so the main script call gets a
+// larger cap (MAX_SCRIPT_TOKENS) and the small helper calls disable thinking
+// via HELPER_THINKING to keep their tight caps meaningful.
+const SCRIPT_MODEL = "claude-sonnet-5";
+const HELPER_THINKING = { type: "disabled" };
 const ANTHROPIC_VERSION = "2023-06-01";
 const TARGET_WORDS = 900;
 // CHANGED 2026-08-13: 1400 -> 2600. Episodes were consistently landing at
@@ -18,7 +26,10 @@ const TARGET_WORDS = 900;
 // share the same budget, and a truncated response fails JSON.parse and falls
 // back to raw text with claims unaudited. Raise the ceiling first so the
 // stronger LENGTH instruction below has room to actually land.
-const MAX_SCRIPT_TOKENS = 2600;
+// CHANGED 2026-09-24: 2600 -> 16000 with the move to Sonnet 5, whose
+// adaptive thinking shares this budget with the JSON output. Still
+// non-streaming; 16k is the documented safe ceiling for that.
+const MAX_SCRIPT_TOKENS = 16000;
 const MAX_SCRIPT_CHARS = 7000;
 const MONTHLY_CREDIT_BUDGET = 92000;
 const TTS_MODEL = "eleven_flash_v2_5";
@@ -1074,6 +1085,7 @@ async function repairConnectorCrutches(env, script, flags, diagnostics) {
         body: JSON.stringify({
           model: SCRIPT_MODEL,
           max_tokens: 150,
+          thinking: HELPER_THINKING,
           messages: [{
             role: "user",
             content: `Rewrite this single sentence from a spoken audio script so it does NOT use the word "${flag.detail.replace(",", "")}" or any similar connector word (also, meanwhile, elsewhere, in addition, speaking of). Keep every fact exactly as stated -- change ONLY the sentence structure/connector, nothing else. Return ONLY the rewritten sentence, no preamble, no quotes.\n\nSentence: ${target.trim()}`
@@ -1119,6 +1131,7 @@ async function expandShortScript(env, script, digest, diagnostics) {
       body: JSON.stringify({
         model: SCRIPT_MODEL,
         max_tokens: 2000,
+        thinking: HELPER_THINKING,
         messages: [{
           role: "user",
           content: `Below is the stories section of a spoken daily briefing, and the source material it was written from. It is ${before} words. It needs to be at least 700 words.
@@ -1194,6 +1207,7 @@ async function rewriteForFreshness(env, script, digest, yesterdayScript, diagnos
       body: JSON.stringify({
         model: SCRIPT_MODEL,
         max_tokens: 2000,
+        thinking: HELPER_THINKING,
         messages: [{
           role: "user",
           content: `Below is the stories section of a spoken daily briefing. It reuses too much of yesterday's episode's own sentences -- ${(before * 100).toFixed(0)}% of it overlaps with yesterday's wording, even after accounting for storm names and numbers changing.
@@ -1257,6 +1271,7 @@ async function tightenText(env, text, targetWords, label, diagnostics) {
       body: JSON.stringify({
         model: SCRIPT_MODEL,
         max_tokens: 1000,
+        thinking: HELPER_THINKING,
         messages: [{
           role: "user",
           content: `The following ${label} for a spoken audio script is ${before} words, over its ${targetWords}-word ceiling. Cut it to fit at or under ${targetWords} words. Preserve every distinct fact and idea and the same voice -- tighten sentences, cut redundancy and elaboration that isn't load-bearing, do not remove entire ideas if avoidable, and never add anything new. Return ONLY the tightened text, no preamble, no quotes, no word count.\n\nTEXT:\n${text}`
@@ -1286,6 +1301,8 @@ async function generateScript(env, digest, quote, diagnostics) {
     body: JSON.stringify({
       model: SCRIPT_MODEL,
       max_tokens: MAX_SCRIPT_TOKENS,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{
         role: "user",
