@@ -104,11 +104,17 @@ The "significance note" attached to some items is a note TO YOU, not script copy
 
 NEGATION CRUTCH. "It's not X. It's not Y. It's Z." and "That's not a finding. That's infrastructure." are one move, and it goes stale fast. Use it at most once per episode. State what a thing IS directly instead. This is checked after generation.
 
-NO FILLER FOR THE THEME. Every sentence has to say something about the story it's in. A sentence that only exists to make a story fit the organizing idea ("There's no way to make that faster. There's no intervention possible.") gets cut. If a story needs that much help to fit, it doesn't fit.
+NO FILLER FOR THE THEME. Every sentence has to say something about the story it's in. A sentence that only exists to make a story fit the organizing idea ("There's no way to make that faster. There's no intervention possible.") gets cut. So does a sentence that only comments on the list itself ("four systems, none of them one story - just the honest state of the Pacific right now") - end a segment on the last real fact or reaction, not on a summary of how many things you just said. If a story needs that much help to fit, it doesn't fit.
 
 KEEP THE OPENING'S PROMISE. Whatever frame your opening names, the stories that follow have to actually use it. Don't open by promising a three-way split or a claim about "where human spaceflight is" and then drop it after the first story.
 
-LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs.
+LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs. When an item is marked "DATA IS FROM YESTERDAY" or "DATA IS N DAYS OLD", say so aloud in plain words ("as of yesterday's last update") - a day-old position for a strong storm is a different fact from a current one.
+
+HEDGES ARE FACTS. Qualifiers in the source - nearly, about, roughly, up to, at least, may, appears to, expected to - are part of the fact, not decoration. "Nearly full" stays "nearly full", never "full"; "may" never becomes "will". Dropping a hedge is changing a load-bearing fact. This is checked after generation.
+
+BACKGROUND EVENTS. A story is new; the events it mentions may not be. If an article (see its [published=] date) refers to an earlier earthquake, launch, or discovery, don't narrate that earlier event as if it just happened - either leave its timing out or mark it as earlier ("the magnitude eight point eight quake that struck the region last year" only if that timing is supplied; otherwise "an earlier magnitude eight point eight quake"). Only the thing the article is actually reporting is today's news.
+
+COMPARISONS HAVE TO FIT. A simile or analogy must make the thing clearer to someone who's never seen it. If it needs explaining, or maps loosely (a lagoon watched "like a chronic patient"), cut it and say the plain thing.
 
 THE INFERENCE RULE - the one that matters
 Two standards apply to the stories section.
@@ -399,6 +405,9 @@ async function readSourceBlob(ns, key, label) {
             // docking, Neptune, ESA). Keep both; condense() labels them.
             summary: s.summary || "",
             whyItMatters: s.whyItMatters || "",
+            // ADDED 2026-09-25: carried through so condense() can tag the
+            // article date -- see the BACKGROUND EVENTS rule in SYSTEM_PROMPT.
+            publishedAt: s.publishedAt || null,
             kind: (s.category || "").toLowerCase(),
             // ADDED 2026-08-08 (feedback #2): carry the real outlet name
             // through so condense()/the model can cite it. Previously
@@ -515,7 +524,16 @@ async function readEarthBlob(ns, key) {
           }
           if (ev.date) {
             const d = new Date(ev.date);
-            if (!Number.isNaN(d.getTime())) facts.push(`as of ${d.toISOString().slice(0, 10)}`);
+            if (!Number.isNaN(d.getTime())) {
+              // CHANGED 2026-09-25: a bare "as of 2026-09-24" didn't register
+              // as stale -- the Sep 25 episode presented Hurricane Polo's
+              // day-old fix as current. Spell out the age so it's
+              // unmissable; the model is told to say it aloud (see LIVE HAZARDS).
+              const iso = d.toISOString().slice(0, 10);
+              const days = Math.round((Date.parse(utcDayKey()) - Date.parse(iso)) / 86400000);
+              const age = days <= 0 ? "" : days === 1 ? " (DATA IS FROM YESTERDAY - not updated today)" : ` (DATA IS ${days} DAYS OLD - not updated since)`;
+              facts.push(`as of ${iso}${age}`);
+            }
           }
         }
         events.push({ id: ev.id, kind, title: ev.title || "", summary: facts.join(", "), whyItMatters: why[ev.id] || "" });
@@ -600,7 +618,9 @@ function condense(story, max) {
   // model can use for attribution. Only added when a real sourceName is
   // present -- never fabricated downstream in the prompt.
   const outletTag = story.sourceName ? ` [outlet=${toSpeakableAscii(story.sourceName)}]` : "";
-  return `- id=${story.id}${outletTag} ${title}: ${summary.slice(0, max)}`;
+  const pub = story.publishedAt ? new Date(story.publishedAt) : null;
+  const pubTag = pub && !Number.isNaN(pub.getTime()) ? ` [published=${pub.toISOString().slice(0, 10)}]` : "";
+  return `- id=${story.id}${outletTag}${pubTag} ${title}: ${summary.slice(0, max)}`;
 }
 
 function hasReportableFact(story) {
@@ -919,6 +939,39 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
   // That's infrastructure." -- ~8 in the Sep 24 episode. Prompt allows one.
   const negations = script.match(/\b(?:it's|it is|that's|that is|this is|they're|they are|none of (?:them|it) (?:is|are))\s+not\b|\b(?:it|that|this) isn't\b/gi) || [];
   if (negations.length > 2) flags.push({ type: "negation-crutch", detail: `${negations.length} uses` });
+  // ADDED 2026-09-25: hedge drift. Sep 25 source said "nearly full Moon";
+  // the script said "tonight's moon is full". For each hedge+word pair in
+  // today's source items (not yesterday's script, which is also in the
+  // digest), flag when the script uses that word with no hedge just before
+  // it. "about/around/up to/at least" only count before a number, since
+  // "a story about Galileo" isn't a hedge.
+  const HEDGE_ANY = "nearly|almost|roughly|approximately|possibly|likely|may|might|appears to|expected to";
+  const HEDGE_NUM = "about|around|up to|at least";
+  const STOP = new Set(["the", "a", "an", "be", "have", "been", "to", "of", "in", "and", "or", "that", "this", "its", "it"]);
+  const sourceItemText = sourceText.split("\n").filter((l) => l.startsWith("- SOURCE=")).join("\n").toLowerCase();
+  const hedgeRe = new RegExp(`\\b(?:(?:${HEDGE_ANY})\\s+([a-z][a-z-]{2,})|(?:${HEDGE_NUM})\\s+(\\d[\\d,.]*))`, "g");
+  const hedgedWords = new Set();
+  for (const m of sourceItemText.matchAll(hedgeRe)) {
+    const w = m[1] || m[2];
+    if (w && !STOP.has(w)) hedgedWords.add(w);
+  }
+  const scriptTokens = script.toLowerCase().replace(/[^a-z0-9,.' -]+/g, " ").split(/\s+/).filter(Boolean);
+  const hedgeTokens = new Set(["nearly", "almost", "roughly", "approximately", "possibly", "likely", "may", "might", "about", "around", "to", "least", "appears", "expected", "near", "some", "perhaps", "probably", "could"]);
+  const dropped = [];
+  for (const w of hedgedWords) {
+    scriptTokens.forEach((t, i) => {
+      if (t.replace(/[,.]+$/, "") !== w) return;
+      const before = scriptTokens.slice(Math.max(0, i - 3), i);
+      if (!before.some((b) => hedgeTokens.has(b))) dropped.push(w);
+    });
+  }
+  if (dropped.length) flags.push({ type: "hedge-dropped", detail: [...new Set(dropped)].join(", ").slice(0, 80) });
+  // ADDED 2026-09-25: stale hazard data must be labeled aloud (Hurricane
+  // Polo's day-old fix was presented as current on Sep 25).
+  if (/DATA IS (?:FROM YESTERDAY|\d+ DAYS OLD)/.test(sourceText) &&
+      !/\byesterday\b|\bdays? old\b|\blast update\b|\bnot been updated\b|\bhasn't been updated\b|\bnot updated\b|\bday-old\b/i.test(script)) {
+    flags.push({ type: "stale-data-unlabeled" });
+  }
   const THEME_NAMING = ["the theme running through", "the through-line here", "the throughline here", "what connects all of this", "what ties these together", "the common thread here"];
   const reflectionLower = (reflection || "").toLowerCase();
   for (const phrase of THEME_NAMING) {
