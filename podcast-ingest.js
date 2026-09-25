@@ -45,6 +45,15 @@ You will be handed 5-7 candidate stories, mixed together, not grouped by topic. 
 
 STEP ONE - find the organizing idea BEFORE you choose anything. Scan all the candidates for one thing that connects three or more of them: a mechanism, a place, a tension, an escalation, a contradiction, a before-and-after. This is not decoration you add at the end - it is the reason you're choosing these stories over the others. If nothing genuinely connects three or more stories, pick the two that connect most strongly and let the rest be a single plain aside, not a forced member of the theme.
 
+AVOIDING A REPEATED FRAME - part of STEP ONE, not a separate step
+Below the source material you'll find a short list of the organizing ideas used in recent episodes. Check today's instinct against that list before committing to it. If your first idea is the same kind of frame as a recent one - even reworded, even with entirely different facts plugged in - that is not a fresh angle, it's the same essay again with new names in it.
+
+This happens most easily when today's stories are shaped like a recent day's stories. Multiple active storms at once is close to the default state during parts of the year, not an occasional coincidence, which means "several things happening simultaneously reveals something about finite capacity" is available as an angle on most days - it will keep presenting itself as the easiest connective thread precisely because it always fits. Easiest is exactly the problem: if it's on the recent list, it is no longer available to you today, no matter how well it fits.
+
+When the obvious angle is already used, look past it deliberately. What's specifically different about WHICH things are happening today, not just that several things are happening. A different kind of connection than capacity or scale: shared history or naming, a contrast in timescale or in what can versus can't be predicted, a question one story raises that another answers, an irony, a reversal, a mechanism one story shares with another that has nothing to do with how many things are active. A genuinely different angle is worth the extra effort even when the familiar one would have been easier to write.
+
+If, having actually looked, nothing about today's stories connects in a way that isn't already on the recent list, say so plainly in the organizingIdea field below rather than forcing a stretch. A more list-like episode that day is a smaller failure than quietly reusing last week's idea with today's facts swapped in.
+
 STEP TWO - choose 3 to 5 stories using that idea as the filter, not "which are individually most important." Cut whichever ones don't serve it - a story that's individually interesting but doesn't fit is exactly what makes a briefing feel like a list. Fewer stories covered well, all pulling the same direction, beats more stories covered thinly.
 
 STEP THREE - let the organizing idea show up early, not just in the reflection. The opening line or the first segue should already be operating on it, even if you don't name it outright yet. If the listener only learns why these stories belong together in the closing line, the middle of the episode already read as disconnected while they were listening to it - the reflection is a place to land the idea, not the first place you reveal it.
@@ -54,7 +63,9 @@ Order the stories by what they share, not by which pipeline they came from. A se
 CROSSING BETWEEN EARTH AND SPACE
 The moment you move from an earth story to a space story, or back again, is a harder version of the segue problem above, and it fails differently. Two earth stories, or two space stories, usually share something on the surface - a mechanism, a place, a scale - so the segue above is enough. Earth and space material often doesn't share anything obvious, and the default failure is to finish the last earth thought and then cold-start the space story with its own attribution ("Space.com reported that...") as if it were the opening of a new segment. That seam is audible, and it's the single most common way an otherwise good episode reads as two briefings stapled together instead of one.
 
-Before writing that sentence, find the actual bridge: a shared mechanism (both are about waiting, or about scale, or about something built specifically to watch), a contrast worth stating outright (the fast thing versus the slow thing, what we can predict versus what we can't), or a genuine thematic echo between what today's earth material and space material are actually doing - not a manufactured one bolted on after the fact. If today's earth and space stories genuinely share nothing beyond both existing, say that plainly as the pivot itself: a sentence that openly marks the turn ("there's a separate story today that has nothing to do with any of that") is an honest transition. A silent cut with no acknowledgment at all is not, even if no crutch word appears in it - this failure doesn't show up as a banned connector word, so it will not get caught downstream the way "meanwhile" would. It has to be caught here, while writing.
+Before writing that sentence, find the actual bridge: a shared mechanism (both are about waiting, or about scale, or about something built specifically to watch), a contrast worth stating outright (the fast thing versus the slow thing, what we can predict versus what we can't), or a genuine thematic echo between what today's earth material and space material are actually doing - not a manufactured one bolted on after the fact. If today's earth and space stories genuinely share nothing beyond both existing, say that plainly as the pivot itself rather than cutting silently with no acknowledgment at all - that silent cut doesn't show up as a banned connector word, so it won't get caught downstream the way "meanwhile" would. It has to be caught here, while writing.
+
+There is no single correct way to mark an honest pivot, and reusing the same one becomes exactly the kind of crutch this section exists to prevent - vary it: sometimes it's a plain admission ("this next one doesn't connect to any of that"), sometimes it's simply starting the new story on its own terms without any pivot sentence at all, sometimes it's a question the first half leaves open that the second half happens to answer. Whichever you reach for, don't reach for the same phrasing twice in a row across episodes - this is checked after generation the same way "meanwhile" is.
 
 A briefing that regularly crosses between earth and space is exactly what makes it different from a single-topic feed, so that crossing point deserves at least as much craft as the segues within one domain - not an afterthought bolted onto whichever story happened to be generated last.
 
@@ -66,6 +77,12 @@ FLOWING (aim for this): "Offshore Indonesia took the bigger shock overnight, mag
 Notice the second version has zero transition words and the connection is doing the work: sudden versus slow versus indefinite, as a real observation, not three unrelated facts filed one after another. Also notice the organizing idea here - different timescales of the same restlessness - is legible from the first sentence, not just at a summary at the end.
 
 VOICE
+You are an informed enthusiast who reads space and earth-science coverage obsessively, every day, so the listener doesn't have to - not a journalist performing neutrality, not a brand, not an institution reading a press release aloud. A specific person who finds this stuff genuinely interesting and has already done the reading before this recording started.
+
+NOT breathless-AI-profound - no strained cosmic-significance turns, no forced awe, no reflection that could have been generated about any topic on any day regardless of what actually happened (this is the same failure the banned-phrase list and the retired structural move above exist to catch, stated here as the thing to avoid rather than a list of symptoms). NOT a dry aggregator either - reciting facts in the order they arrived, with no throughline and no one visibly interested in any of it, is a press release with extra steps, not a briefing from a person. The target sits between those two poles, and it's a narrower target than either extreme: interested without performing interest, informed without lecturing.
+
+Landing description: plain, curious, unhurried. If a sentence wouldn't sound natural coming from someone who actually finds this interesting and is telling a friend about it over coffee, it's off-voice - too stiff if it reads like a wire report, too reverent if it reads like a eulogy for the universe.
+
 Plain and specific. Short sentences next to long ones. Comfortable being interested in something without justifying why. You can be dry. You can let a thing be strange. You are not performing enthusiasm and you are not narrating a nature documentary.
 
 Every story needs a reaction, not just a report. "Etna doesn't wait for anyone to be watching, it just goes" is the target: a plain, specific aside that shows you actually thought something about the fact, not just relayed it. This is different from the reflection at the end - it's small, local to that one story, and it happens as you go rather than being saved up. A story with only setup and fact, no reaction anywhere in it, is unfinished, even if every fact in it is accurate. The reaction can be dry, skeptical, curious, or just a plain observation - it does not need to be positive or awed.
@@ -101,15 +118,24 @@ TEXTURE is yours: rhythm, ordering, emphasis, phrasing, segues, and observations
 The test: could a listener act on this, or be wrong about the world because of it? Then it is load-bearing.
 
 SOURCE ATTRIBUTION
-At least once per episode - ideally on the story you open with - name where a story actually came from, using the outlet tag supplied with that item in the source material (format: [outlet=Name]). Say it plainly and naturally: "Last night, Space.com reported that..." or "According to NASA, ...". Never invent an outlet name, and never attribute a story to an outlet whose tag isn't present in the supplied material for that exact story - if a story has no outlet tag, don't attribute it to one. Do not do this for every story - once is enough, more than two starts to sound like a reading of citations instead of a briefing. This one detail is what tells a listener the story is grounded in something real rather than assembled from nowhere, so do not skip it.
+At least once per episode - ideally on the story you open with - name where a story actually came from, using the outlet tag supplied with that item in the source material (format: [outlet=Name]). Say it plainly and naturally: "Last night, Space.com reported that..." or "According to NASA, ...". Never invent an outlet name, and never attribute a story to an outlet whose tag isn't present in the supplied material for that exact story - if a story has no outlet tag, don't attribute it to one.
+
+HARD CAP, not a guideline: at most ONE named outlet per episode. A second is the absolute ceiling and should be rare - reach for it only when a second story's grounding genuinely needs it, not by default. Never a third, under any circumstance, and never the same outlet named twice in one episode even if it's the true source for two different stories - if that happens, name it once and let the second story stand without repeating the attribution. This is checked after generation the same way connector-crutch words are: an episode with three or more named outlets, or the same outlet named twice, reads as a citation list, not a briefing, and will get flagged regardless of how naturally each individual mention was written.
 
 CONTINUITY
 If yesterday's episode is supplied below the source material, and something in today's material is a continuation of a story yesterday's episode also covered - the same storm, the same eruption, the same investigation - say so plainly: "Dolphin, which we mentioned yesterday, has tracked another 200 miles west" reads as a show with memory instead of a fresh cold-start every single day, and a listener who hears this daily will notice the difference.
 
 The hard rule: yesterday's episode is for phrasing a callback, never for facts. Only reference something from it if that same thing ALSO appears in today's source material with its own facts there - use today's material for the actual numbers, dates, and status, and yesterday's episode only to establish that it's a continuation. Never pull a fact, number, or status from yesterday's episode that isn't independently present in today's material; treating yesterday's script as a source would mean reporting something that may no longer be true today as if it still were. If nothing in today's material connects to yesterday's episode, don't force a callback - most days won't have one, and that's fine.
 
+A second, equally hard rule: never reuse yesterday's sentences, even when today's version of a story is genuinely similar to yesterday's. A storm that's barely moved, or a funding story that's still developing, is real continuity - reporting it again in your own words, freshly, is exactly right. Copying yesterday's sentence structure and swapping in a new number is not continuity, it's the same paragraph twice with a different name in it, and it is checked for after generation the same way connector-crutch words are. Read yesterday's episode below for what happened and how you phrased the callback, then write today's version as if you were describing it for the first time - never as an edit of what's already there.
+
 THE REFLECTION - different rules, read carefully
 Sixty to a hundred words at the end. A thought about the earth, or our place in things, that grows out of TODAY'S material specifically. Not a general meditation with today's news pasted on top.
+
+RETIRED STRUCTURAL MOVE - read this before anything else in this section
+One specific closing move has become the default fallback across recent episodes regardless of what words dress it up: space framed as patient and timescale-agnostic, watching slow questions with no urgency, set against Earth framed as urgent and real-time, demanding immediate response - landing on the mismatch between what's watchable and what needs action. It has shown up as "longevity," as "capacity," as "observable timescales," as "watching versus responding" - different vocabulary every time, identical structure every time. This move is retired. Do not close on a contrast between space's patience and Earth's urgency, however it's phrased, for the foreseeable stretch of episodes.
+
+If today's material doesn't hand you a genuinely different closing idea, don't fall back to this one anyway - stay with ONE specific story instead of reaching for a cross-domain contrast at all. A reflection that stays close to one concrete thing, with no space/Earth pairing in it, is better than this duality wearing new words.
 
 It must contain ZERO load-bearing facts. No numbers, no dates, no place names, no agency names, no measurements. Nothing that could be checked and found wrong. It reflects on what you already said; it does not add anything new about the world.
 
@@ -164,7 +190,7 @@ DISASTER IMAGERY: if the most striking story is a disaster that harmed people, d
 
 OUTPUT
 Return ONLY a JSON object, no fences:
-{"script":"<opening and stories, no reflection>","reflection":"<the reflection, containing the supplied quotation verbatim>","imagePrompt":"<the cover image prompt>","claims":[{"text":"<load-bearing fact as stated>","sourceId":"<exact id it came from>"}]}
+{"script":"<opening and stories, no reflection>","reflection":"<the reflection, containing the supplied quotation verbatim>","imagePrompt":"<the cover image prompt>","organizingIdea":"<5-15 word description of today's actual connecting idea from STEP ONE, or 'no strong connection found' if that's honestly true>","claims":[{"text":"<load-bearing fact as stated>","sourceId":"<exact id it came from>"}]}
 Every load-bearing fact in the script gets a claims entry. If you cannot name the id a fact came from, the fact does not belong in the script.`;
 
 function toSpeakableAscii(text) {
@@ -571,7 +597,7 @@ function hasReportableFact(story) {
   return summary.length > 0;
 }
 
-function pickTopEarthEvents(earth, max) {
+function pickTopEarthEvents(earth, max, staleIds = null) {
   const weight = (e) => {
     // CHANGED 2026-09-24: was a flat 100, so a magnitude 1.33 microquake
     // outranked every storm and news item (Sep 24 episode). Below M2.5 an
@@ -593,7 +619,22 @@ function pickTopEarthEvents(earth, max) {
     if (e.kind === "ice") return 30;
     return 10;
   };
-  return earth.events.filter(hasReportableFact).sort((a, b) => weight(b) - weight(a)).slice(0, max);
+  // ADDED 2026-08-28: deprioritize (never exclude) an event confirmed
+  // byte-identical to yesterday's episode -- see buildStormFingerprint/
+  // detectStaleStorms below. Prompted by Julio holding the exact same
+  // reported position for three straight days (Aug 26-28): confirmed via
+  // /health that this wasn't a pipeline failure, the underlying source data
+  // genuinely hadn't changed, so the fix belongs here in selection, not in
+  // fixing a bug that doesn't exist. -55 drops a stale storm (base 70) below
+  // every other category including ice (30), so any genuinely fresh
+  // alternative wins the slot -- but it stays in the pool and can still be
+  // picked if it's honestly the only thing available that day.
+  const STALE_PENALTY = 55;
+  const weightWithStaleness = (e) => {
+    const base = weight(e);
+    return staleIds && staleIds.has(e.id) ? base - STALE_PENALTY : base;
+  };
+  return earth.events.filter(hasReportableFact).sort((a, b) => weightWithStaleness(b) - weightWithStaleness(a)).slice(0, max);
 }
 
 // ADDED 2026-08-23 (closing gap #1, continuity): read yesterday's stored
@@ -621,7 +662,14 @@ async function readYesterdayEpisode(env, day) {
     // one. Separate from the CONTINUITY feature above, which is about
     // phrasing a callback, not detecting whether the underlying data is
     // actually stale.
-    return { day: yKey, script: ep.script, stormFingerprint: ep.stormFingerprint || null };
+    // ADDED 2026-08-28: spaceFingerprint alongside it, same reasoning applied
+    // to space stories -- confirmed via /health on Aug 28 that the Aug 27-28
+    // repeat of the Mars-refueling/Enceladus-hopper stories was NOT a
+    // pipeline failure (spaceIngest ran on schedule both days); a story can
+    // legitimately stay eligible for up to 72h (INGEST_RECENCY_HOURS) with no
+    // fresher coverage. Same fix as storms: deprioritize a confirmed-repeat,
+    // don't treat it as a bug.
+    return { day: yKey, script: ep.script, stormFingerprint: ep.stormFingerprint || null, spaceFingerprint: ep.spaceFingerprint || null };
   } catch {
     return null;
   }
@@ -655,10 +703,66 @@ function detectStaleStorms(todayFingerprint, yesterdayFingerprint) {
   return stale;
 }
 
-function buildSourceDigest(space, earth, yesterday = null) {
+// ADDED 2026-08-28: same fingerprint approach as storms above, applied to
+// space stories. Unlike earth events, space.stories has no "kind" that
+// specifically means "should always change day to day" -- a story's own
+// text never updates once published, so the interesting signal isn't
+// whether the FACTS changed, it's whether the SAME story (by id) is still
+// the one being selected with nothing fresher to replace it. Fingerprints
+// every eligible story, not a subcategory, since that distinction doesn't
+// apply on the space side the way storms-vs-quakes does on the earth side.
+// Reuses detectStaleStorms() as-is below -- it only ever compared two plain
+// id->line dictionaries, nothing storm-specific in its logic.
+function buildSpaceFingerprint(space) {
+  const fp = {};
+  for (const s of space.stories || []) {
+    const line = condense(s, 400);
+    if (line) fp[s.id] = line;
+  }
+  return fp;
+}
+
+// ADDED 2026-08-28: space-side counterpart to pickTopEarthEvents' staleness
+// penalty. Space selection has no existing weight function to subtract a
+// penalty from (it's currently a plain ordered slice), so this deprioritizes
+// by partitioning instead: every non-stale story keeps its original relative
+// order and fills the budget first; stale stories are appended after, in
+// their own original order, and only get a slot if room is left. Same
+// contract as the earth-side fix -- deprioritize, never exclude.
+function selectSpaceStories(stories, max, staleIds) {
+  const eligible = stories.filter(hasReportableFact);
+  if (!staleIds || staleIds.size === 0) return eligible.slice(0, max);
+  const fresh = eligible.filter((s) => !staleIds.has(s.id));
+  const stale = eligible.filter((s) => staleIds.has(s.id));
+  return [...fresh, ...stale].slice(0, max);
+}
+
+function buildSourceDigest(space, earth, yesterday = null, staleEarthIds = null, staleSpaceIds = null, recentIdeas = []) {
   const lines = [];
-  const spaceItems = space.stories.filter(hasReportableFact).slice(0, STORIES_FROM_SPACE).map((s) => condense(s, 400)).filter(Boolean);
-  const earthItems = pickTopEarthEvents(earth, STORIES_FROM_EARTH).map((s) => condense(s, 400)).filter(Boolean);
+  // CHANGED 2026-09-16: prompted by Cyclone Lowell reporting the exact same
+  // position, citing the exact same Sep 11 source date, on four straight
+  // transcripts (Sep 13-16). The deprioritization penalty was working
+  // correctly -- Lowell just had no fresher alternative to lose to on 3 of
+  // those 4 days, so the designed fallback (still include it rather than
+  // drop real content) kept firing silently. That's the right selection
+  // outcome; the problem was the model had no way to know it was reporting
+  // stale data, so it wrote it as if freshly observed each time. Annotating
+  // the digest line itself closes that gap without changing selection logic
+  // at all -- the model can now choose to say "still parked at the same
+  // spot" instead of repeating the identical sentence.
+  const STALE_NOTE = " [NOTE: this exact fact was already reported in a recent episode with nothing new since -- if you use it, say so honestly (e.g. \"still holding the same position\") rather than presenting it as freshly observed]";
+  const spaceSelected = selectSpaceStories(space.stories, STORIES_FROM_SPACE, staleSpaceIds);
+  const spaceItems = spaceSelected.map((s) => {
+    const line = condense(s, 400);
+    if (!line) return null;
+    return staleSpaceIds?.has(s.id) ? line + STALE_NOTE : line;
+  }).filter(Boolean);
+  const earthSelected = pickTopEarthEvents(earth, STORIES_FROM_EARTH, staleEarthIds);
+  const earthItems = earthSelected.map((e) => {
+    const line = condense(e, 400);
+    if (!line) return null;
+    return staleEarthIds?.has(e.id) ? line + STALE_NOTE : line;
+  }).filter(Boolean);
   lines.push("TODAY'S SOURCE MATERIAL (order and select freely -- do not group by SOURCE tag; it's provenance, not a section header. The [outlet=...] tag on some items is the real outlet name -- see SOURCE ATTRIBUTION in your instructions for how to use it):");
   const allItems = [...spaceItems, ...earthItems];
   if (allItems.length) {
@@ -701,6 +805,20 @@ function buildSourceDigest(space, earth, yesterday = null) {
     lines.push(`YESTERDAY'S EPISODE (${yesterday.day}) -- for continuity callbacks ONLY, per the CONTINUITY rule in your instructions. This is NOT source material: never cite a fact from it that isn't also present in today's material above.`);
     lines.push(yesterday.script.slice(0, 4000));
   }
+  // ADDED 2026-09-01: recent organizing ideas, for the AVOIDING A REPEATED
+  // FRAME rule in SYSTEM_PROMPT. This is what actually closes the loop --
+  // without seeing what's already been used, the model has no way to know
+  // "concurrent systems strain finite capacity" was also yesterday's idea
+  // and the day before's, just reworded each time. Pulled from the credit
+  // ledger (see ledger.recentOrganizingIdeas), not from a single day's
+  // episode, since this needs a rolling multi-day window the same way
+  // recentQuotes/recentCloseouts already work -- one day back isn't enough
+  // to catch a 3-day drift.
+  if (recentIdeas.length) {
+    lines.push("");
+    lines.push("RECENT ORGANIZING IDEAS (most recent first) -- do not reuse any of these as today's connecting idea, per the AVOIDING A REPEATED FRAME rule in your instructions:");
+    lines.push(...recentIdeas.map((r) => `- ${r.day}: ${r.idea}`));
+  }
   return lines.join("\n");
 }
 
@@ -715,6 +833,33 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
     }
   }
   if (!cited.length) flags.push({ type: "no-claims-returned" });
+  // ADDED 2026-09-16: attribution had drifted from "once, maybe twice" soft
+  // guidance to real episodes citing the same outlet twice (Sep 14:
+  // SpaceDaily x2) and up to 4 total citations in one episode (Sep 15:
+  // SpaceQ x2, Universe Today x2). Regex-based, same heuristic-pattern
+  // approach as the connector-crutch and reflection-cliche checks below --
+  // calibrated against both transcripts before inclusion: correctly counts
+  // 4 hits with 2 repeats on each real over-attribution case, 1 hit on a
+  // clean single-outlet episode.
+  const ATTRIBUTION_PATTERNS = [
+    /\baccording to (?:the )?([A-Z][\w.&']{1,35}(?:\s+[A-Z][\w.&']{1,35}){0,3})/gi,
+    /\b([A-Z][\w.&']{1,35}(?:\s+[A-Z][\w.&']{1,35}){0,3})\s+(?:reported|reports|noted)\b/g,
+    /reported by ([A-Z][\w.&']{1,35}(?:\s+[A-Z][\w.&']{1,35}){0,3})/gi,
+  ];
+  const outletHits = [];
+  for (const re of ATTRIBUTION_PATTERNS) {
+    let m;
+    while ((m = re.exec(script))) outletHits.push(m[1].trim().replace(/\s+(that|,)$/, ""));
+  }
+  const outletCounts = {};
+  for (const name of outletHits) outletCounts[name] = (outletCounts[name] || 0) + 1;
+  const repeatedOutlets = Object.entries(outletCounts).filter(([, n]) => n > 1).map(([name]) => name);
+  if (repeatedOutlets.length) {
+    flags.push({ type: "outlet-repeated", detail: repeatedOutlets.join(", ") });
+  }
+  if (outletHits.length > 2) {
+    flags.push({ type: "too-many-outlets", detail: `${outletHits.length} citations: ${outletHits.join(", ")}` });
+  }
   // ADDED 2026-08-13: nothing in the audit ever checked length, so a run of
   // ~410-word episodes (46% of target) shipped for a week with no signal
   // anywhere -- it was only caught by reading a transcript by hand. This
@@ -734,7 +879,12 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
     const present = digits ? haystack.includes(digits) : haystack.includes(t);
     if (!present) flags.push({ type: "unsourced-time", detail: m[0].trim() });
   }
-  const CONNECTOR_CRUTCHES = ["meanwhile,", "also,", "in addition,", "elsewhere,", "speaking of", "in other news", "turning now to", "next up", "moving on to"];
+  // "nothing to do with" catches the "there's a separate story today that
+  // has nothing to do with any of that" crutch confirmed recurring verbatim
+  // across real episodes (Aug 25, Sep 13) -- the prompt suggested it as ONE
+  // example of an honest pivot and the model turned it into a formula. Same
+  // failure class as "meanwhile," just longer.
+  const CONNECTOR_CRUTCHES = ["meanwhile,", "also,", "in addition,", "elsewhere,", "speaking of", "in other news", "turning now to", "next up", "moving on to", "nothing to do with"];
   const scriptLower = script.toLowerCase();
   for (const phrase of CONNECTOR_CRUTCHES) {
     if (scriptLower.includes(phrase)) flags.push({ type: "connector-crutch-word", detail: phrase });
@@ -808,6 +958,42 @@ const QUOTES = [
   { id: "liwei-greatwall", text: "The scenery was very beautiful. But I did not see the Great Wall.", who: "Yang Liwei", themes: ["perspective", "earth"] },
   { id: "glenn-sunsets", text: "I don't know what you could say about a day in which you have seen four beautiful sunsets.", who: "John Glenn", themes: ["sky", "perspective"] },
   { id: "earle-lifesupport", text: "Do everything you can to learn about your life support system, then everything you can to take care of it.", who: "Sylvia Earle", themes: ["earth", "fragility"] },
+  // ADDED 2026-09-01: closing the fragility pool gap that forced the exact
+  // same Sylvia Earle quote to repeat verbatim on Aug 31 and Sep 1 -- a pool
+  // of one has no possible variation once dayTheme() lands on "fragility"
+  // twice in the same 8-day recency window, which it will keep doing given
+  // this account's input (multiple concurrent storms most days) reliably
+  // trips the fragility branch. Both quotes below were verified via web
+  // search against NASA.gov and cross-checked against multiple independent
+  // secondary sources before inclusion -- verbatim accuracy matters more
+  // here than usual, since THE QUOTE rule requires reproducing these exactly
+  // as given with no rewording.
+  { id: "collins-fragility", text: "It had an air of fragility, like something that is easily broken.", who: "Michael Collins", themes: ["earth", "fragility"] },
+  { id: "merbold-terrified", text: "I was terrified by its fragile appearance.", who: "Ulf Merbold", themes: ["earth", "fragility"] },
+  // ADDED 2026-09-01: not fragility-specific (it's oasis/isolation imagery,
+  // not vulnerability), but the "earth" pool was also thin (4, now 5) --
+  // included here to help that pool rather than left out for not fitting
+  // fragility narrowly. Verified via web search; NASA's own two official
+  // pages (a Kennedy Space Center retrospective and a science.nasa.gov
+  // Earthrise anniversary post) both consistently render it "in the big
+  // vastness" -- used that wording over a secondary site's "to the big
+  // vastness" variant.
+  { id: "lovell-oasis", text: "The Earth from here is a grand oasis in the big vastness of space.", who: "James Lovell", themes: ["earth", "perspective"] },
+  // ADDED 2026-09-01, second verification pass: all four confirmed via web
+  // search against multiple independent sources before inclusion (see
+  // Schweickart's Wikiquote entry citing the original 1974 Lindisfarne
+  // Conference talk; Mitchell's People Magazine, 8 April 1974 attribution;
+  // Leonov's Euronews obituary and The Planetary Society's own tribute;
+  // Acton's sourcing to the published compilation "The Home Planet").
+  //
+  // The Mitchell quote is truncated before its original closing line, which
+  // ends in profanity that doesn't belong in this show -- the cut lands on
+  // a genuine sentence boundary ("...look so petty."), and nothing kept was
+  // altered.
+  { id: "schweickart-borders", text: "You look down there and you can't imagine how many borders and boundaries you cross, again and again and again, and you don't even see them.", who: "Rusty Schweickart", themes: ["earth", "perspective"] },
+  { id: "mitchell-consciousness", text: "You develop an instant global consciousness, a people orientation, an intense dissatisfaction with the state of the world, and a compulsion to do something about it. From out there on the moon, international politics look so petty.", who: "Edgar Mitchell", themes: ["earth", "fragility", "perspective"] },
+  { id: "leonov-relic", text: "The Earth was small, light blue, and so touchingly alone, our home that must be defended like a holy relic.", who: "Alexei Leonov", themes: ["earth", "fragility"] },
+  { id: "acton-welcoming", text: "Looking outward to the blackness of space, sprinkled with the glory of a universe of lights, I saw majesty - but no welcome. Below was a welcoming planet.", who: "Loren Acton", themes: ["earth", "fragility", "default"] },
   { id: "lessing-dialect", text: "Space or science fiction has become a dialect for our time.", who: "Doris Lessing", themes: ["space", "discovery"] }
 ];
 
@@ -967,6 +1153,132 @@ ${script}`
   }
 }
 
+// ADDED 2026-09-02: n-gram overlap detector, prompted by the Sep 1 -> Sep 2
+// episode reusing 94% of a paragraph's words verbatim (storm names/numbers
+// swapped, everything else identical) -- the CONTINUITY block feeds
+// yesterday's full script in for callback phrasing, and nothing previously
+// stopped the model from copying its sentences outright instead of writing
+// fresh ones. Calibrated against real data before picking a threshold: the
+// actual Sep1/Sep2 copy scored 77.8% on this metric; two genuinely unrelated
+// paragraphs on different topics scored 0%. THRESHOLD is set well below the
+// observed failure and well above plausible incidental overlap (shared
+// proper nouns, "according to", etc.).
+function computeTextOverlap(todayText, yesterdayText, n = 8) {
+  const normalize = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean);
+  const todayWords = normalize(todayText);
+  const yesterdayWords = normalize(yesterdayText);
+  if (todayWords.length < n || yesterdayWords.length < n) return 0;
+  const yesterdayGrams = new Set();
+  for (let i = 0; i <= yesterdayWords.length - n; i++) yesterdayGrams.add(yesterdayWords.slice(i, i + n).join(" "));
+  let matches = 0, total = 0;
+  for (let i = 0; i <= todayWords.length - n; i++) {
+    total++;
+    if (yesterdayGrams.has(todayWords.slice(i, i + n).join(" "))) matches++;
+  }
+  return total > 0 ? matches / total : 0;
+}
+const TEXT_OVERLAP_THRESHOLD = 0.15;
+
+// ADDED 2026-09-02: rewrite retry, same shape and same guardrails as
+// expandShortScript above -- never adds a fact not already in the digest,
+// never accepted if it doesn't actually improve (here: doesn't actually
+// lower overlap), original kept on any failure. One attempt only; this is a
+// full-script rewrite, not a single-sentence fix, so it's the most expensive
+// retry in the pipeline and deliberately not looped the way expansion is.
+async function rewriteForFreshness(env, script, digest, yesterdayScript, diagnostics) {
+  const before = computeTextOverlap(script, yesterdayScript);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
+      body: JSON.stringify({
+        model: SCRIPT_MODEL,
+        max_tokens: 2000,
+        messages: [{
+          role: "user",
+          content: `Below is the stories section of a spoken daily briefing. It reuses too much of yesterday's episode's own sentences -- ${(before * 100).toFixed(0)}% of it overlaps with yesterday's wording, even after accounting for storm names and numbers changing.
+
+Rewrite it to report the same facts, from the same source material, in genuinely different sentences and structure than yesterday's episode used. Do not add any new fact, number, date, place, name, or agency that isn't already in the source material below. Do not change what happened -- only how it's written. Keep the same voice: plain, specific, varied sentence length.
+
+Return ONLY the rewritten stories section as plain prose. No preamble, no quotes, no markdown.
+
+SOURCE MATERIAL:
+${digest}
+
+YESTERDAY'S EPISODE (do not reuse this wording):
+${yesterdayScript.slice(0, 4000)}
+
+TODAY'S CURRENT DRAFT (too similar to yesterday's, needs fresh wording):
+${script}`
+        }]
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const rewritten = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    if (!rewritten) {
+      diagnostics.push({ step: "rewrite-freshness", ok: false, before, note: "rewrite returned nothing; keeping original" });
+      return script;
+    }
+    const after = computeTextOverlap(rewritten, yesterdayScript);
+    if (after >= before) {
+      diagnostics.push({ step: "rewrite-freshness", ok: false, before, after, note: "rewrite did not reduce overlap; keeping original" });
+      return script;
+    }
+    diagnostics.push({ step: "rewrite-freshness", ok: true, before, after, outputTokens: data.usage?.output_tokens ?? null });
+    return toSpeakableAscii(rewritten);
+  } catch (err) {
+    diagnostics.push({ step: "rewrite-freshness", ok: false, before, error: String(err.message || err) });
+    return script;
+  }
+}
+
+// ADDED 2026-09-16, per the Informed Local Voice Guide's principle 4:
+// "length is a ceiling, not a suggestion... never trust the model's
+// self-reported length... if meaningfully over, do exactly ONE tightening
+// pass, then ship regardless of the result. Never loop." Deliberately the
+// opposite discipline from expandShortScript's up-to-3-attempt loop above --
+// that asymmetry is intentional per the guide: a too-short episode is
+// missing content and worth retrying to actually fix, but a too-long
+// episode already has everything it needs, so one honest attempt at
+// trimming is enough and looping just risks quietly eroding the content
+// each pass. This closes a real, previously-unfixed gap: reflection length
+// has been audited (reflection-too-long, cap 130) since the audit was
+// built, but nothing ever acted on the flag -- which is exactly how a
+// reflection went 109 -> 159 -> 259 words across three real episodes with
+// the problem visible in diagnostics the entire time and nothing shipping
+// a fix.
+async function tightenText(env, text, targetWords, label, diagnostics) {
+  const before = text.trim().split(/\s+/).filter(Boolean).length;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
+      body: JSON.stringify({
+        model: SCRIPT_MODEL,
+        max_tokens: 1000,
+        messages: [{
+          role: "user",
+          content: `The following ${label} for a spoken audio script is ${before} words, over its ${targetWords}-word ceiling. Cut it to fit at or under ${targetWords} words. Preserve every distinct fact and idea and the same voice -- tighten sentences, cut redundancy and elaboration that isn't load-bearing, do not remove entire ideas if avoidable, and never add anything new. Return ONLY the tightened text, no preamble, no quotes, no word count.\n\nTEXT:\n${text}`
+        }]
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const tightened = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const after = tightened ? tightened.trim().split(/\s+/).filter(Boolean).length : before;
+    if (!tightened || after >= before) {
+      diagnostics.push({ step: "tighten", ok: false, label, before, after, note: "tightening returned nothing shorter; keeping original per one-shot rule" });
+      return text;
+    }
+    diagnostics.push({ step: "tighten", ok: true, label, before, after, outputTokens: data.usage?.output_tokens ?? null });
+    return toSpeakableAscii(tightened);
+  } catch (err) {
+    diagnostics.push({ step: "tighten", ok: false, label, before, error: String(err.message || err), note: "keeping original per one-shot rule -- a slightly-long episode beats a failed publish" });
+    return text;
+  }
+}
+
 async function generateScript(env, digest, quote, diagnostics) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -995,15 +1307,21 @@ async function generateScript(env, digest, quote, diagnostics) {
     stopReason: data.stop_reason
   });
   let text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  let script = "", reflection = "", imagePrompt = "", claims = [];
+  let script = "", reflection = "", imagePrompt = "", organizingIdea = "", claims = [];
   try {
     const parsed = JSON.parse(text);
     script = parsed.script || "";
     reflection = parsed.reflection || "";
     imagePrompt = parsed.imagePrompt || "";
+    organizingIdea = parsed.organizingIdea || "";
     claims = parsed.claims || [];
     if (!reflection) diagnostics.push({ step: "script", ok: true, note: "no reflection returned" });
     if (!imagePrompt) diagnostics.push({ step: "script", ok: true, note: "no imagePrompt returned -- cover art will fall back to static cover.jpg" });
+    // ADDED 2026-09-01: non-fatal by design, same reasoning as the two notes
+    // above -- a missing organizingIdea shouldn't block an otherwise-good
+    // episode, it just means tomorrow's anti-repetition check has one less
+    // data point to work with.
+    if (!organizingIdea) diagnostics.push({ step: "script", ok: true, note: "no organizingIdea returned -- recent-frame tracking will have a gap for today" });
   } catch {
     diagnostics.push({ step: "script", ok: true, note: "response was not valid JSON; using raw text, claims unaudited, no image prompt" });
     script = text;
@@ -1012,6 +1330,7 @@ async function generateScript(env, digest, quote, diagnostics) {
     script: toSpeakableAscii(script),
     reflection: toSpeakableAscii(reflection),
     imagePrompt: toSpeakableAscii(imagePrompt),
+    organizingIdea: toSpeakableAscii(organizingIdea),
     claims
   };
 }
@@ -1194,17 +1513,45 @@ export async function runPodcastIngest(env, opts = {}) {
     // checkable after the fact instead of invisible.
     const todayStormFingerprint = buildStormFingerprint(earth);
     const staleStorms = detectStaleStorms(todayStormFingerprint, yesterday?.stormFingerprint);
+    // CHANGED 2026-08-28: renamed from staleIds now that there are two sets
+    // (earth and space) feeding buildSourceDigest's deprioritization below.
+    const staleEarthIds = staleStorms.length ? new Set(staleStorms.map((s) => s.id)) : null;
     if (staleStorms.length) {
       diagnostics.push({
         step: "staleness", ok: false,
-        note: "one or more tracked storms report the exact same position as yesterday's episode -- likely a source-data refresh failure, not a real observation",
+        // CHANGED 2026-08-28: the original note here assumed this meant a
+        // source-data refresh failure. Confirmed via an authenticated
+        // /health check on Aug 28 that this was wrong -- spaceIngest and
+        // earthIngest were both current, no error anywhere. A storm holding
+        // the same reported position for multiple days is usually a real,
+        // correctly-reported observation (a stalling or dissipating system,
+        // or nothing newer available within the 72h recency window), not a
+        // broken pipeline. Don't re-diagnose this as an outage without
+        // checking /health first.
+        note: "one or more tracked storms report the exact same position as yesterday's episode -- usually a real unchanged observation, not a pipeline failure; now deprioritized (not excluded) in favor of fresher earth content when both exist",
         staleStorms
       });
     } else {
       diagnostics.push({ step: "staleness", ok: true, checked: Object.keys(todayStormFingerprint).length });
     }
 
-    const digest = buildSourceDigest(space, earth, yesterday);
+    // ADDED 2026-08-28: space-side counterpart. Same detectStaleStorms()
+    // function reused as-is -- see buildSpaceFingerprint's comment for why
+    // that's safe (it never contained storm-specific logic).
+    const todaySpaceFingerprint = buildSpaceFingerprint(space);
+    const staleSpaceStories = detectStaleStorms(todaySpaceFingerprint, yesterday?.spaceFingerprint);
+    const staleSpaceIds = staleSpaceStories.length ? new Set(staleSpaceStories.map((s) => s.id)) : null;
+    if (staleSpaceStories.length) {
+      diagnostics.push({
+        step: "staleness-space", ok: false,
+        note: "one or more space stories are byte-identical to yesterday's episode -- expected when a story stays within the 72h recency window with nothing fresher to replace it, not a pipeline failure; now deprioritized (not excluded) in favor of fresher space content when both exist",
+        staleSpaceStories
+      });
+    } else {
+      diagnostics.push({ step: "staleness-space", ok: true, checked: Object.keys(todaySpaceFingerprint).length });
+    }
+
+    const digest = buildSourceDigest(space, earth, yesterday, staleEarthIds, staleSpaceIds, ledger.recentOrganizingIdeas || []);
     const theme = dayTheme(space, earth);
     const quote = pickQuote(theme, ledger.recentQuotes || []);
     diagnostics.push({ step: "quote", ok: true, theme, id: quote.id, who: quote.who });
@@ -1235,6 +1582,45 @@ export async function runPodcastIngest(env, opts = {}) {
     const validIds = new Set([...space.stories, ...earth.events].map((s) => s.id).filter(Boolean));
     const audit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
     diagnostics.push({ step: "audit", ok: audit.clean, claims: audit.claimCount, flags: audit.flags });
+
+    // ADDED 2026-09-02: prompted by Sep1->Sep2 reusing 94% of a paragraph's
+    // words verbatim. Runs BEFORE length expansion, deliberately -- fixing
+    // originality first means expansion (if still needed after) works from
+    // genuinely fresh text rather than padding out a copy.
+    let textOverlap = yesterday?.script ? computeTextOverlap(gen.script, yesterday.script) : 0;
+    if (yesterday?.script && textOverlap >= TEXT_OVERLAP_THRESHOLD) {
+      diagnostics.push({ step: "freshness", ok: false, overlap: textOverlap, threshold: TEXT_OVERLAP_THRESHOLD });
+      const rewritten = await rewriteForFreshness(env, gen.script, digest, yesterday.script, diagnostics);
+      if (rewritten !== gen.script) {
+        gen.script = rewritten;
+        script = gen.reflection ? `${gen.script}\n\n${gen.reflection}` : gen.script;
+        textOverlap = computeTextOverlap(gen.script, yesterday.script);
+        const reAudit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
+        diagnostics.push({ step: "audit", ok: reAudit.clean, claims: reAudit.claimCount, flags: reAudit.flags, note: "post-freshness-rewrite re-audit" });
+        audit.flags = reAudit.flags;
+        audit.clean = reAudit.clean;
+      }
+    } else if (yesterday?.script) {
+      diagnostics.push({ step: "freshness", ok: true, overlap: textOverlap });
+    }
+
+    // ADDED 2026-09-16: one-shot tightening for the reflection specifically,
+    // per the voice guide's length-ceiling principle. audit.flags already
+    // contains reflection-too-long if the cap (130 words) was exceeded --
+    // this is the first thing that ever actually acts on that flag instead
+    // of just recording it.
+    const reflectionTooLong = audit.flags.find((f) => f.type === "reflection-too-long");
+    if (reflectionTooLong && gen.reflection) {
+      const tightened = await tightenText(env, gen.reflection, 100, "reflection", diagnostics);
+      if (tightened !== gen.reflection) {
+        gen.reflection = tightened;
+        script = `${gen.script}\n\n${gen.reflection}`;
+        const reAudit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
+        diagnostics.push({ step: "audit", ok: reAudit.clean, claims: reAudit.claimCount, flags: reAudit.flags, note: "post-tighten re-audit" });
+        audit.flags = reAudit.flags;
+        audit.clean = reAudit.clean;
+      }
+    }
 
     // CHANGED 2026-08-17: was a single expandShortScript() call. Real data
     // from Aug 13-16 shows one pass reliably narrows the gap (412->449,
@@ -1368,7 +1754,20 @@ export async function runPodcastIngest(env, opts = {}) {
       // staleStorms is TODAY's own finding, persisted so it's checkable via
       // a plain KV get after the fact, same reasoning as episode.imageError.
       stormFingerprint: todayStormFingerprint,
-      staleStorms: staleStorms.length ? staleStorms : null
+      staleStorms: staleStorms.length ? staleStorms : null,
+      // ADDED 2026-08-28: space-side counterpart to the two fields above.
+      spaceFingerprint: todaySpaceFingerprint,
+      staleSpaceStories: staleSpaceStories.length ? staleSpaceStories : null,
+      // ADDED 2026-09-01: today's organizing idea, persisted for the same
+      // retroactive-checkability reason as imageError/staleStorms -- lets
+      // you confirm via a plain KV get whether the model actually returned
+      // one and what it thought today's connecting idea was, without
+      // needing a manual /trigger call.
+      organizingIdea: gen.organizingIdea || null,
+      // ADDED 2026-09-02: retroactively checkable, same pattern as
+      // imageError/staleStorms. null when there was no yesterday to compare
+      // against (day one, or a gap in episodes).
+      textOverlapWithYesterday: yesterday?.script ? textOverlap : null
     };
     episode.title = toSpeakableAscii(episode.title);
     await env.PODCAST_KV.put(`podcast:episode:${day}`, JSON.stringify(episode));
@@ -1391,6 +1790,13 @@ export async function runPodcastIngest(env, opts = {}) {
     ledger.episodes += 1;
     ledger.recentQuotes = [quote.id, ...(ledger.recentQuotes || [])].slice(0, 12);
     ledger.recentCloseouts = [closeout.id, ...(ledger.recentCloseouts || [])].slice(0, 5);
+    // ADDED 2026-09-01: only recorded when the model actually returned one --
+    // a missing organizingIdea (see generateScript's diagnostics note) just
+    // means today leaves no trace in the anti-repetition check rather than
+    // polluting it with an empty entry.
+    if (gen.organizingIdea) {
+      ledger.recentOrganizingIdeas = [{ day, idea: gen.organizingIdea }, ...(ledger.recentOrganizingIdeas || [])].slice(0, 8);
+    }
     ledger.lastEpisode = day;
     await writeCreditLedger(env.PODCAST_KV, ledger);
 

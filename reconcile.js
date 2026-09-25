@@ -153,7 +153,14 @@ export async function checkHeartbeats(env, jobs) {
 export async function reconcile(env, data) {
   const declaredCrons = [
     { worker: "stluker", expected: "0 9 " + "*/3 * *" },
-    { worker: "stl-music", expected: "0 10 * * 1" },
+    // "stl-music" native cron entry REMOVED 2026-09-08: it was retired
+    // 2026-07-30 when music/sports pulse folded into stl-dispatcher's
+    // Sunday task ("35 11 * * SUN" below). This entry had no matching live
+    // cron since that date, so checkCronDrift has been emitting a phantom
+    // cron_drift warning on every single run for over a month. A findings
+    // list with a permanent false positive in it is a findings list that
+    // gets ignored -- removing the check, not adding a fix, since there is
+    // nothing left to check.
     // REPLACED 2026-08-23: the Aug 22 schools-outage investigation resulted
     // in splitting EVERY day-gated task in dispatcher.js onto its own cron +
     // its own dedicated runXOnly() function, the same pattern the podcast
@@ -173,11 +180,33 @@ export async function reconcile(env, data) {
     { worker: "stl-dispatcher", expected: "25 11 * * MON,WED,FRI" }, // schoolsRefresh
     { worker: "stl-dispatcher", expected: "30 11 * * *" },           // podcastIngest
     { worker: "stl-dispatcher", expected: "35 11 * * SUN" },         // music + sports pulse
+    // ADDED 2026-09-08: stl-weekly was the one dispatcher task with no
+    // drift check at all -- confirmed via a live pull of the deployed
+    // dispatcher.js that the cron and runWeeklyOnly() wiring are real and
+    // correct, but nothing here would have caught it if that cron were
+    // ever accidentally changed or dropped. Closing that gap now that the
+    // automated path itself has been confirmed working end-to-end via a
+    // real /trigger?includeWeekly=true call (episodeId 2026-09-08).
+    { worker: "stl-dispatcher", expected: "40 11 * * MON" },         // stl-weekly refresh
     // stl-sports intentionally omitted until its expression is confirmed (T-10)
+    //
+    // ADDED 2026-09-01: rails-beneath-us runs its OWN native cron, confirmed
+    // directly from its wrangler.jsonc — not folded into stl-dispatcher
+    // (unlike everything else in this list). If it's ever consolidated,
+    // remove this entry and add its task to the stl-dispatcher block above.
+    { worker: "rails-beneath-us", expected: "0 11 * * 1,3,5" }, // Mon/Wed/Fri 06:00 CT
+    { worker: "innovation-daily", expected: "0 11 * * 2,4" },   // Tue/Thu 06:00 CT
+    { worker: "civicsignal", expected: "0 11 * * MON-FRI" },    // weekday mornings, ~06:00 CT
+    { worker: "bigbuilds", expected: "0 13 */2 * *" },          // every other day, ~08:00 CT
   ];
   const trackedWorkers = [
     "stluker", "family", "stl-sports", "stl-music", "stl-bucket",
-    "fire-api", "memory-lattice", "reunion", "pokelab", "ironrails",
+    "fire-api", "reunion", "pokelab", "ironrails",
+    // "memory-lattice" REMOVED 2026-09-08: a live checkWorkerInventory run
+    // flagged it as phantom_worker (the Worker no longer exists in
+    // Cloudflare, only its R2 bucket memory-lattice-photos remains). Removing
+    // the reference here is the fix that finding calls for; the orphaned R2
+    // bucket is a separate cleanup, not something this check can act on.
     "stl-dispatcher", "space", "earth", "intel",
     // supabase-keepalive and stl-status-sync fully decommissioned 2026-07-xx —
     // removed from this list, so checkWorkerInventory will now correctly flag
@@ -186,6 +215,28 @@ export async function reconcile(env, data) {
     // "earth"/"intel" added 2026-07-23 — both went live that day but this
     // list lagged them, meaning checkWorkerInventory was silently flagging
     // both as untracked_worker instead of recognizing them as expected.
+    //
+    // ADDED 2026-09-01: this list had silently lagged live deploys for
+    // six-plus weeks (root cause of the Sep 1 status.stluker.com staleness
+    // incident) — every name below came straight off a live untracked_worker
+    // finding, not a guess. "status" itself is included since the status
+    // Worker was never in this list despite existing since Jun 18.
+    "status",           // status.stluker.com — the Status Board Worker itself
+    "retire",           // retire.stluker.com — confirmed a real Worker Jul 16
+    "pod",              // pod.stluker.com — daily podcast pipeline, stl-dispatcher Task 7
+    "podcast",          // distinct name from "pod" per a live untracked_worker finding — confirm at next code touch whether this is a leftover/duplicate deploy or a genuinely separate Worker before removing either
+    "schools",          // schools.stluker.com — stl-dispatcher Task 8
+    "stl-weekly",       // weekly.stluker.com — stl-dispatcher's Monday task.
+                        // WEEKLY_SECRET confirmed set on both stl-dispatcher
+                        // and stl-weekly as of 2026-09-08, and the full
+                        // automated path (dispatcher /trigger -> stl-weekly
+                        // /refresh) was confirmed working end-to-end the
+                        // same day (episodeId 2026-09-08). Open task closed.
+    "rails-beneath-us", // distinct from "ironrails" (trains.stluker.com) — confirm at next code touch whether this is a duplicate/stale deploy or a real separate project
+    "civicsignal",      // untracked, purpose/status unconfirmed — verify before treating as permanently expected
+    "innovation-daily", // untracked, purpose/status unconfirmed — verify before treating as permanently expected
+    "mech-match",       // untracked, purpose/status unconfirmed — verify before treating as permanently expected
+    "bigbuilds",        // untracked, purpose/status unconfirmed — verify before treating as permanently expected
   ];
   const heartbeatJobs = [
     { job: "stl-dispatcher:keepalive", maxAgeHours: 24 * 6 }, // every 5 days + grace
@@ -215,6 +266,16 @@ export async function reconcile(env, data) {
     { job: "schools:refresh", maxAgeHours: 24 * 4 }, // Mon/Wed/Fri; longest real gap is Fri->Mon (72h) + grace
     { job: "stl-music:pulse", maxAgeHours: 24 * 8 },  // weekly (Sunday) + 1-day grace, same pattern as stl-bucket
     { job: "stl-sports:pulse", maxAgeHours: 24 * 8 }, // weekly (Sunday) + 1-day grace, same pattern as stl-bucket
+    // ADDED 2026-09-08: runWeeklyOnly() in dispatcher.js has recorded a
+    // stl-weekly:refresh heartbeat since stl-weekly's cron was added, but
+    // this entry was never added here -- the identical omission shape that
+    // let schools:refresh go unmonitored for 10 days in August. Confirmed
+    // via a real /trigger?includeWeekly=true call the same day (episodeId
+    // 2026-09-08) that the job name and recordHeartbeat wiring are exactly
+    // this string. Monday-only cron, so the longest legitimate gap between
+    // successes is 168h; 8 days matches the grace window already used for
+    // every other weekly job in this list (stl-bucket, stl-music, stl-sports).
+    { job: "stl-weekly:refresh", maxAgeHours: 24 * 8 },
   ];
 
   const findings = [

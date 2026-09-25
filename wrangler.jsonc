@@ -137,7 +137,14 @@
       "20 11 * * MON,WED,THU", // intelRefresh -- Mon/Wed/Thu
       "25 11 * * MON,WED,FRI", // schoolsRefresh -- Mon/Wed/Fri
       "30 11 * * *",           // podcastIngest -- daily, unchanged, must run after :10/:15
-      "35 11 * * SUN"          // music + sports pulse -- Sunday only
+      "35 11 * * SUN",         // music + sports pulse -- Sunday only
+      "40 11 * * MON"          // stl-weekly refresh -- ADDED 2026-09-08. dispatcher.js's
+                               // declaredCrons and its scheduled() switch (case "40 11 * *
+                               // MON": runWeeklyOnly()) both had this entry already; only
+                               // this file was missing it, so that switch case was
+                               // unreachable and stl-weekly (created 2026-08-27) never ran
+                               // on schedule. Caught by the reconciler's own cron_drift
+                               // check, not by a human noticing a missing episode.
     ]
   },
 

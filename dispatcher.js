@@ -42,6 +42,11 @@
  *   add secret/binding duplication with no isolation benefit beyond what
  *   separate crons on this one Worker already provide.
  *
+ * UPDATED 2026-08-27: added stl-weekly (Task 9) following the exact same
+ *   dedicated-cron pattern as every task below — own Cron Trigger, own
+ *   scheduled() case, own run*Only function, own /trigger opt-in flag, own
+ *   /health heartbeat. No new gating mechanism introduced.
+ *
  * SCHEDULE (see wrangler.jsonc "triggers" for the authoritative list)
  *   NOTE: weekday fields use Cloudflare's Quartz-style names (MON/TUE/etc),
  *   not numbers — Cloudflare's cron numbering (1=Sunday...7=Saturday) does
@@ -59,6 +64,10 @@
  *                         written by the :10/:15 runs, needs its own fresh
  *                         subrequest budget (ElevenLabs TTS + Workers AI)
  *   35 11 * * SUN         music + sports pulse refresh — Sunday only
+ *   40 11 * * MON         stl-weekly refresh — Monday only (added 2026-08-27;
+ *                         runs 5 minutes after the SUN music/sports slot's
+ *                         *next-day* read, so Monday's episode always reads
+ *                         Sunday's already-refreshed music/sports data)
  *
  * BINDINGS (wrangler.jsonc)
  *   STATUS_KV            KV namespace (heartbeat storage)
@@ -90,6 +99,13 @@
  *   ELEVENLABS_VOICE_ID      secret
  *   MUSIC_SECRET             secret — Bearer token for stl-music's /api/pulse
  *   SPORTS_SECRET            secret — Bearer token for stl-sports' /api/pulse
+ *   WEEKLY_SECRET            secret — Bearer token for stl-weekly's /refresh.
+ *                            Must match stl-weekly's own WEEKLY_SECRET.
+ *                            (Added 2026-08-27 — NOT YET SET. Run
+ *                            `wrangler secret put WEEKLY_SECRET` on both
+ *                            this Worker and stl-weekly before relying on
+ *                            this task; until then runWeeklyOnly() will
+ *                            throw "WEEKLY_SECRET not bound" every time.)
  *
  * HTTP ROUTES
  *   GET  /health   — unauthenticated callers get {ok:true}; authenticated
@@ -106,6 +122,13 @@
 import { checkAuth } from './auth.js';
 import { recordHeartbeat, readHeartbeat, evaluateHeartbeat } from './heartbeat.js';
 import { reconcile } from './reconcile.js';
+// ADDED 2026-09-08: turns reconcile()'s findings from a pull surface
+// (status.stluker.com, someone has to look) into a push -- a Resend email
+// when a finding is critical/warning, with its own cooldown so an ongoing
+// failure mails once rather than once per run. See alerting.js for the
+// cooldown/fingerprint design. Requires RESEND_API_KEY (set 2026-09-08);
+// ALERT_TO is optional and defaults to pdluker@gmail.com in code.
+import { maybeAlert } from './alerting.js';
 import { fetchDataJson, commitDataJson } from './github.js';
 import { runSpaceIngest } from './space-ingest.js';
 import { runEarthIngest } from './earthIngest.js';
@@ -123,7 +146,7 @@ export default {
         return jsonResponse({ ok: true });
       }
 
-      const [keepaliveHb, syncHb, stlBucketHb, spaceHb, earthHb, intelHb, podcastHb, schoolsHb, musicHb, sportsHb] = await Promise.all([
+      const [keepaliveHb, syncHb, stlBucketHb, spaceHb, earthHb, intelHb, podcastHb, schoolsHb, musicHb, sportsHb, weeklyHb] = await Promise.all([
         readHeartbeat(env.STATUS_KV, 'stl-dispatcher:keepalive'),
         readHeartbeat(env.STATUS_KV, 'stl-dispatcher:status-sync'),
         readHeartbeat(env.STATUS_KV, 'stl-bucket:refresh'),
@@ -134,6 +157,7 @@ export default {
         readHeartbeat(env.STATUS_KV, 'schools:refresh'),
         readHeartbeat(env.STATUS_KV, 'stl-music:pulse'),
         readHeartbeat(env.STATUS_KV, 'stl-sports:pulse'),
+        readHeartbeat(env.STATUS_KV, 'stl-weekly:refresh'),
       ]);
 
       let podcastLastError = null;
@@ -155,6 +179,7 @@ export default {
         schoolsRefresh: evaluateHeartbeat(schoolsHb, 24 * 4),
         musicRefresh: evaluateHeartbeat(musicHb, 24 * 8),
         sportsRefresh: evaluateHeartbeat(sportsHb, 24 * 8),
+        weeklyRefresh: evaluateHeartbeat(weeklyHb, 24 * 8), // 8-day tolerance = one missed week before flagging stale
       });
     }
 
@@ -169,6 +194,7 @@ export default {
       const includePodcast = url.searchParams.get('includePodcast') === 'true';
       const includeSchools = url.searchParams.get('includeSchools') === 'true';
       const includeMusicSports = url.searchParams.get('includeMusicSports') === 'true';
+      const includeWeekly = url.searchParams.get('includeWeekly') === 'true';
       const forcePodcastEpisode = url.searchParams.get('forcePodcast') === 'true';
 
       // Each task is independent now — no shared runAll(), no day gate.
@@ -199,11 +225,14 @@ export default {
             sportsRefresh: { ran: false, reason: 'not requested (includeMusicSports=false)' } };
       results.musicRefresh = musicSports.musicRefresh;
       results.sportsRefresh = musicSports.sportsRefresh;
+      results.weeklyRefresh = includeWeekly
+        ? await runWeeklyOnly(env)
+        : { ran: false, reason: 'not requested (includeWeekly=false)' };
 
       return jsonResponse({
         ok: true,
         forced: true,
-        includeBucket, includeSpace, includeEarth, includeIntel, includePodcast, includeSchools, includeMusicSports,
+        includeBucket, includeSpace, includeEarth, includeIntel, includePodcast, includeSchools, includeMusicSports, includeWeekly,
         results,
       });
     }
@@ -249,6 +278,9 @@ export default {
         return;
       case '35 11 * * SUN':
         ctx.waitUntil(runMusicSportsOnly(env));
+        return;
+      case '40 11 * * MON':
+        ctx.waitUntil(runWeeklyOnly(env));
         return;
       default:
         console.error(`[stl-dispatcher] scheduled() fired with unrecognized cron expression: ${event.cron}`);
@@ -494,6 +526,35 @@ async function runMusicSportsOnly(env) {
   return results;
 }
 
+// ── stl-weekly refresh — Monday only, own cron (day gate is the cron itself)
+// ADDED 2026-08-27. Matches runIntelOnly/runSchoolsOnly's shape exactly.
+// ROUTE NAME ASSUMPTION: '/refresh' is carried over from stl-bucket/intel/
+// schools' own convention — confirm this is actually what stl-weekly's
+// worker exposes once it's built. Music and sports both turned out to use
+// '/api/events' rather than an assumed '/data.json' during this project's
+// own debugging session earlier the same day — don't repeat that mistake
+// here without checking.
+async function runWeeklyOnly(env) {
+  try {
+    if (!env.WEEKLY_SECRET) throw new Error('WEEKLY_SECRET not bound');
+    const res = await fetch('https://weekly.stluker.com/refresh', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.WEEKLY_SECRET}`,
+        'User-Agent': 'stl-dispatcher/1.0 (+https://stluker.com; internal service call)',
+      },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) throw new Error(`stl-weekly returned ${res.status}: ${JSON.stringify(body)}`);
+    const result = { ran: true, ok: true, episodeId: body.episode?.id || null };
+    await recordHeartbeat(env.STATUS_KV, 'stl-weekly:refresh', { triggeredBy: 'dispatcher', episodeId: body.episode?.id || null });
+    return result;
+  } catch (e) {
+    console.error('[stl-dispatcher] stl-weekly refresh failed:', e);
+    return { ran: true, ok: false, error: String(e) };
+  }
+}
+
 // ── Task 1 implementation — pings Supabase + fire-api ─────────────────────
 async function runKeepalive(env) {
   const targets = [
@@ -525,6 +586,14 @@ async function runStatusSync(env) {
   const reconciled = await reconcile(env, data);
   const after = JSON.stringify(reconciled.verification.findings);
 
+  // ADDED 2026-09-08: alert on the full findings array here, before it gets
+  // collapsed into the {findingsCount, findingsChanged, committed} summary
+  // below -- this is the one place in the call chain where the actual
+  // finding objects (job/worker/severity/message) are still in scope.
+  // maybeAlert() never throws; a failure here must not be able to break the
+  // sync it's reporting on.
+  const alertResult = await maybeAlert(env, reconciled.verification.findings);
+
   reconciled.meta = {
     lastUpdated: new Date().toISOString().slice(0, 10),
     version: bumpPatchVersion(reconciled.meta?.version),
@@ -547,6 +616,7 @@ async function runStatusSync(env) {
     findingsCount: reconciled.verification.findingsCount,
     findingsChanged,
     committed: findingsChanged,
+    alerting: alertResult,
   };
 }
 
