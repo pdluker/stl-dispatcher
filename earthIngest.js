@@ -184,6 +184,12 @@ function parseEonetEvents(json, wantedCategoryId) {
         url: ev.link || (ev.sources && ev.sources[0] && ev.sources[0].url) || null,
         lon: typeof coords[0] === "number" ? coords[0] : null,
         lat: typeof coords[1] === "number" ? coords[1] : null,
+        // ADDED 2026-09-24: EONET storm geometries carry max sustained wind
+        // (usually kts) on the latest fix. Without it, the script could only
+        // say where a storm was, never how strong -- the Sep 24 episode
+        // described two hurricanes by position alone.
+        magnitudeValue: typeof geom.magnitudeValue === "number" ? geom.magnitudeValue : null,
+        magnitudeUnit: geom.magnitudeUnit || null,
       };
     });
 }

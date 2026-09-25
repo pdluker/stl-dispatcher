@@ -72,13 +72,28 @@ Every story needs a reaction, not just a report. "Etna doesn't wait for anyone t
 
 This is also where "why it matters" belongs, and it needs to land as a real point, not a formality. When the source material hands you a why-it-matters framing, use it to say something specific about what changes or what it's evidence of - not "and this is important because it helps us understand X" as a stock closing clause. If the source material doesn't give you a why-it-matters and you can't honestly generate one from what's actually there, don't manufacture one - a story can stand on being specific and interesting without a stated stakes claim, but it should never get a vague, interchangeable one just to check the box.
 
+The "significance note" attached to some items is a note TO YOU, not script copy. Never read it aloud as written, and never paste it in after you've already made the same point in your own words - that produces the same idea twice in a row, the second time in a flatter voice, and listeners hear the seam. Say the point once, in your own words, or skip it. Copying runs of source wording is checked after generation.
+
+NEGATION CRUTCH. "It's not X. It's not Y. It's Z." and "That's not a finding. That's infrastructure." are one move, and it goes stale fast. Use it at most once per episode. State what a thing IS directly instead. This is checked after generation.
+
+NO FILLER FOR THE THEME. Every sentence has to say something about the story it's in. A sentence that only exists to make a story fit the organizing idea ("There's no way to make that faster. There's no intervention possible.") gets cut. If a story needs that much help to fit, it doesn't fit.
+
+KEEP THE OPENING'S PROMISE. Whatever frame your opening names, the stories that follow have to actually use it. Don't open by promising a three-way split or a claim about "where human spaceflight is" and then drop it after the first story.
+
+LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs.
+
 THE INFERENCE RULE - the one that matters
 Two standards apply to the stories section.
 
 LOAD-BEARING FACTS may only appear if supplied, exactly as supplied. Never estimate, round into a new number, convert, or infer:
   magnitudes, depths, distances, counts, dates, clock times, durations,
   casualty or damage figures, causes, place names, agency names, alert levels,
-  what happens next.
+  what happens next,
+  and how far along a technology or finding is. "Researchers developed a
+  training method" does not become "it's being tested on crewed vehicles";
+  a simulation result is not a flight result. Don't upgrade the stage.
+  Don't invent operational details either (e.g. communication delays,
+  visibility to the naked eye) that weren't supplied.
 If a load-bearing fact was not supplied, the sentence needing it does not get written. Say less instead.
 
 TEXTURE is yours: rhythm, ordering, emphasis, phrasing, segues, and observations about how supplied facts sit next to each other. You may note that six satellite passes in four days means a thing is moving. You may not decide where it is moving.
@@ -211,43 +226,70 @@ function speakableUsgsPlace(place) {
 // set of points relevant to where EONET typically reports storms/fires/ice
 // (Pacific rim, Atlantic hurricane basin, polar ice), not exhaustive --
 // falls back to plain coordinates if nothing in the list is reasonably close.
+// CHANGED 2026-09-24: most mainland entries were geographic CENTROIDS
+// (California = the Central Valley, Mexico = inland Zacatecas, India = the
+// Deccan) and a few were bodies of water. That produced "1500 miles south of
+// California", "550 miles south of Mexico", and "350 miles northwest of the
+// Bay of Bengal" (which is on land) in the Sep 24 episode. Storms are
+// described relative to the coast they threaten, so every mainland entry is
+// now a named coastal city/point. Small islands keep their own coordinates.
 const LANDMARKS = [
-  { name: "Japan", lat: 36.2, lon: 138.3 },
+  { name: "Tokyo", lat: 35.7, lon: 139.7 },
+  { name: "southern Japan", lat: 31.6, lon: 130.6 },
   { name: "Okinawa", lat: 26.5, lon: 127.9 },
   { name: "Taiwan", lat: 23.7, lon: 121.0 },
-  { name: "the Philippines", lat: 12.9, lon: 121.8 },
+  { name: "Manila", lat: 14.6, lon: 121.0 },
   { name: "Guam", lat: 13.4, lon: 144.8 },
-  { name: "South Korea", lat: 35.9, lon: 127.8 },
-  { name: "eastern China", lat: 31.2, lon: 121.5 },
-  { name: "Vietnam", lat: 14.1, lon: 108.3 },
+  { name: "Busan", lat: 35.2, lon: 129.1 },
+  { name: "Shanghai", lat: 31.2, lon: 121.5 },
+  { name: "Hong Kong", lat: 22.3, lon: 114.2 },
+  { name: "Da Nang, Vietnam", lat: 16.1, lon: 108.2 },
   { name: "Hawaii", lat: 20.8, lon: -156.3 },
   { name: "the Aleutian Islands", lat: 52.0, lon: -176.0 },
-  { name: "Alaska", lat: 61.2, lon: -149.9 },
-  { name: "the Pacific Northwest", lat: 45.5, lon: -122.7 },
-  { name: "California", lat: 36.8, lon: -119.7 },
-  { name: "Mexico", lat: 23.6, lon: -102.5 },
-  { name: "the Gulf of Mexico", lat: 25.0, lon: -90.0 },
-  { name: "Florida", lat: 27.8, lon: -81.7 },
-  { name: "the Carolinas", lat: 34.0, lon: -80.9 },
+  { name: "Anchorage", lat: 61.2, lon: -149.9 },
+  { name: "Portland, Oregon", lat: 45.5, lon: -122.7 },
+  { name: "San Francisco", lat: 37.8, lon: -122.4 },
+  { name: "Los Angeles", lat: 34.1, lon: -118.2 },
+  { name: "Cabo San Lucas", lat: 22.9, lon: -109.9 },
+  { name: "Manzanillo, Mexico", lat: 19.1, lon: -104.3 },
+  { name: "Acapulco", lat: 16.9, lon: -99.9 },
+  { name: "Guatemala's Pacific coast", lat: 13.9, lon: -90.8 },
+  { name: "Houston", lat: 29.8, lon: -95.4 },
+  { name: "New Orleans", lat: 30.0, lon: -90.1 },
+  { name: "Tampa", lat: 27.9, lon: -82.5 },
+  { name: "Miami", lat: 25.8, lon: -80.2 },
+  { name: "Cape Hatteras", lat: 35.3, lon: -75.5 },
+  { name: "Bermuda", lat: 32.3, lon: -64.8 },
   { name: "the Bahamas", lat: 24.3, lon: -76.6 },
   { name: "Cuba", lat: 21.5, lon: -79.5 },
-  { name: "the Yucatan Peninsula", lat: 19.6, lon: -88.2 },
-  { name: "Brazil", lat: -10.3, lon: -53.2 },
-  { name: "Portugal", lat: 39.4, lon: -8.2 },
+  { name: "Puerto Rico", lat: 18.2, lon: -66.6 },
+  { name: "Barbados", lat: 13.2, lon: -59.5 },
+  { name: "Cancun", lat: 21.2, lon: -86.8 },
+  { name: "Cape Verde", lat: 16.0, lon: -24.0 },
+  { name: "Lisbon", lat: 38.7, lon: -9.1 },
   { name: "the Canary Islands", lat: 28.3, lon: -16.5 },
   { name: "Iceland", lat: 64.9, lon: -19.0 },
   { name: "Greenland", lat: 71.7, lon: -42.6 },
   { name: "Antarctica", lat: -75.0, lon: 0.0 },
-  { name: "India", lat: 20.6, lon: 78.9 },
+  { name: "Mumbai", lat: 19.1, lon: 72.9 },
+  { name: "Karachi", lat: 24.9, lon: 67.0 },
+  { name: "Muscat, Oman", lat: 23.6, lon: 58.4 },
+  { name: "Chennai", lat: 13.1, lon: 80.3 },
+  { name: "Visakhapatnam, India", lat: 17.7, lon: 83.2 },
+  { name: "Kolkata", lat: 22.6, lon: 88.4 },
+  { name: "Chittagong, Bangladesh", lat: 22.4, lon: 91.8 },
+  { name: "Myanmar's coast", lat: 16.8, lon: 94.7 },
   { name: "Sri Lanka", lat: 7.9, lon: 80.8 },
-  { name: "the Bay of Bengal", lat: 15.0, lon: 88.0 },
   { name: "Indonesia", lat: -0.8, lon: 113.9 },
   { name: "Papua New Guinea", lat: -6.3, lon: 143.9 },
   { name: "Fiji", lat: -17.7, lon: 178.1 },
   { name: "the Marshall Islands", lat: 7.1, lon: 171.2 },
-  { name: "Australia", lat: -25.3, lon: 133.8 },
+  { name: "Darwin, Australia", lat: -12.5, lon: 130.8 },
+  { name: "Brisbane", lat: -27.5, lon: 153.0 },
+  { name: "Perth", lat: -32.0, lon: 115.9 },
   { name: "New Zealand", lat: -41.0, lon: 174.9 },
   { name: "Madagascar", lat: -18.8, lon: 46.9 },
+  { name: "Mozambique's coast", lat: -19.8, lon: 34.8 },
   { name: "the Horn of Africa", lat: 8.0, lon: 47.0 }
 ];
 function toRad(d) { return (d * Math.PI) / 180; }
@@ -313,7 +355,13 @@ async function readSourceBlob(ns, key, label) {
           byId.set(s.id, {
             id: s.id,
             title: s.headline || "",
-            summary: s.whyItMatters || s.summary || "",
+            // CHANGED 2026-09-24: was `s.whyItMatters || s.summary`, which
+            // discarded the actual summary whenever a why-it-matters existed
+            // and handed the model a single polished sentence as the story's
+            // only content -- which it then read aloud verbatim (Sep 24:
+            // docking, Neptune, ESA). Keep both; condense() labels them.
+            summary: s.summary || "",
+            whyItMatters: s.whyItMatters || "",
             kind: (s.category || "").toLowerCase(),
             // ADDED 2026-08-08 (feedback #2): carry the real outlet name
             // through so condense()/the model can cite it. Previously
@@ -368,8 +416,13 @@ async function readEarthBlob(ns, key) {
         const placeStr = ev.place || ev.location || ev.region;
         events.push({
           id, kind: region,
+          mag: (ev.magnitude ?? ev.mag) == null ? NaN : Number(ev.magnitude ?? ev.mag),
           title: ev.title || (placeStr ? speakableUsgsPlace(String(placeStr)) : `${regionLabel} event`),
-          summary: ev.description || ev.summary || facts.join(", "),
+          // CHANGED 2026-09-24: region label now leads the fact line. Before,
+          // the model saw only "about 9 kilometers south-southeast of Marston,
+          // Missouri" and had no way to know it was in the New Madrid zone --
+          // the one piece of context that makes a small tremor worth a line.
+          summary: ev.description || ev.summary || [regionLabel, ...facts].join(", "),
           whyItMatters: why[id] || ""
         });
       });
@@ -414,6 +467,14 @@ async function readEarthBlob(ns, key) {
             // -- now a landmark-relative distance/bearing, see
             // describeLocationByLandmark() above.
             facts.push(`last tracked ${describeLocationByLandmark(ev.lat, ev.lon)}`);
+          }
+          // ADDED 2026-09-24: storm strength, converted here (not by the
+          // model) so the INFERENCE RULE still holds -- same principle as
+          // speakableUsgsPlace(). Rounded to 5 mph; the source is itself an
+          // estimate reported in 5-knot steps.
+          if (typeof ev.magnitudeValue === "number" && /^kts?$/i.test(ev.magnitudeUnit || "")) {
+            const mph = Math.round((ev.magnitudeValue * 1.15078) / 5) * 5;
+            facts.push(`maximum sustained winds about ${mph} miles per hour`);
           }
           if (ev.date) {
             const d = new Date(ev.date);
@@ -489,9 +550,12 @@ function condense(story, max) {
   const rawWhy = toSpeakableAscii(story.whyItMatters || "");
   let summary;
   if (rawSummary && rawWhy) {
-    summary = `${rawSummary} | why it matters: ${rawWhy}`;
+    // CHANGED 2026-09-24: label now says outright this is a note, not copy.
+    summary = `${rawSummary} | significance note (paraphrase, never read verbatim): ${rawWhy}`;
+  } else if (rawSummary) {
+    summary = rawSummary;
   } else {
-    summary = rawSummary || rawWhy;
+    summary = rawWhy ? `significance note (paraphrase, never read verbatim): ${rawWhy}` : "";
   }
   if (!title) return null;
   if (!summary.trim()) return null;
@@ -509,7 +573,13 @@ function hasReportableFact(story) {
 
 function pickTopEarthEvents(earth, max) {
   const weight = (e) => {
-    if (e.kind === "nmsz" || e.kind === "yellowstone") return 100;
+    // CHANGED 2026-09-24: was a flat 100, so a magnitude 1.33 microquake
+    // outranked every storm and news item (Sep 24 episode). Below M2.5 an
+    // event is instrument-only; it drops beneath news so it's used only on a
+    // genuinely quiet day. Unknown magnitude keeps the old priority.
+    if (e.kind === "nmsz" || e.kind === "yellowstone") {
+      return Number.isFinite(e.mag) && e.mag < 2.5 ? 25 : 100;
+    }
     if (e.kind === "earthquake") return 90;
     if (e.kind === "storms") return 70;
     if (e.kind === "wildfires") return 60;
@@ -669,6 +739,25 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
   for (const phrase of CONNECTOR_CRUTCHES) {
     if (scriptLower.includes(phrase)) flags.push({ type: "connector-crutch-word", detail: phrase });
   }
+  // ADDED 2026-09-24: the Sep 24 episode pasted four source sentences in
+  // verbatim right after paraphrasing them. Any 10-word run shared with the
+  // digest is a copy -- long enough that shared place names/titles don't trip it.
+  const words = (t) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
+  const SHINGLE = 10;
+  const srcWords = words(sourceText);
+  const srcShingles = new Set();
+  for (let i = 0; i + SHINGLE <= srcWords.length; i++) srcShingles.add(srcWords.slice(i, i + SHINGLE).join(" "));
+  const scriptWordList = words(script);
+  const copied = [];
+  for (let i = 0; i + SHINGLE <= scriptWordList.length; i++) {
+    const s = scriptWordList.slice(i, i + SHINGLE).join(" ");
+    if (srcShingles.has(s)) { copied.push(s); i += SHINGLE - 1; }
+  }
+  if (copied.length) flags.push({ type: "verbatim-source-copy", detail: `${copied.length} run(s): ${copied[0].slice(0, 70)}` });
+  // ADDED 2026-09-24: "It's not X. It's not Y." / "That's not a finding.
+  // That's infrastructure." -- ~8 in the Sep 24 episode. Prompt allows one.
+  const negations = script.match(/\b(?:it's|it is|that's|that is|this is|they're|they are|none of (?:them|it) (?:is|are))\s+not\b|\b(?:it|that|this) isn't\b/gi) || [];
+  if (negations.length > 2) flags.push({ type: "negation-crutch", detail: `${negations.length} uses` });
   const THEME_NAMING = ["the theme running through", "the through-line here", "the throughline here", "what connects all of this", "what ties these together", "the common thread here"];
   const reflectionLower = (reflection || "").toLowerCase();
   for (const phrase of THEME_NAMING) {
