@@ -198,10 +198,17 @@ export async function reconcile(env, data) {
     { worker: "innovation-daily", expected: "0 11 * * 2,4" },   // Tue/Thu 06:00 CT
     { worker: "civicsignal", expected: "0 11 * * MON-FRI" },    // weekday mornings, ~06:00 CT
     { worker: "bigbuilds", expected: "0 13 */2 * *" },          // every other day, ~08:00 CT
+    // ADDED 2026-09-25: status Worker's own server-side health probes
+    // (runProbes in status-deploy/index.js). If this cron disappears the
+    // page only shows STALE — this is what turns that into an alert.
+    { worker: "status", expected: "*/5 * * * *" },
+    // ADDED 2026-09-25: Pokemon Podcast (Daily Creature Clash, pokepod repo),
+    // reduced to monthly in Sep 2026.
+    { worker: "podcast", expected: "0 9 1 * *" },
   ];
   const trackedWorkers = [
     "stluker", "family", "stl-sports", "stl-music", "stl-bucket",
-    "fire-api", "reunion", "pokelab", "ironrails",
+    "fire-api", "pokelab", "ironrails",
     // "memory-lattice" REMOVED 2026-09-08: a live checkWorkerInventory run
     // flagged it as phantom_worker (the Worker no longer exists in
     // Cloudflare, only its R2 bucket memory-lattice-photos remains). Removing
@@ -224,7 +231,7 @@ export async function reconcile(env, data) {
     "status",           // status.stluker.com — the Status Board Worker itself
     "retire",           // retire.stluker.com — confirmed a real Worker Jul 16
     "pod",              // pod.stluker.com — daily podcast pipeline, stl-dispatcher Task 7
-    "podcast",          // distinct name from "pod" per a live untracked_worker finding — confirm at next code touch whether this is a leftover/duplicate deploy or a genuinely separate Worker before removing either
+    "podcast",          // pokepod.stluker.com — Pokemon Podcast (Daily Creature Clash), pokepod repo. Confirmed 2026-09-25: genuinely separate from "pod", not a duplicate.
     "schools",          // schools.stluker.com — stl-dispatcher Task 8
     "stl-weekly",       // weekly.stluker.com — stl-dispatcher's Monday task.
                         // WEEKLY_SECRET confirmed set on both stl-dispatcher
