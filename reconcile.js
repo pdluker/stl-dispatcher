@@ -8,6 +8,8 @@
 //   CF_ACCOUNT_ID
 //   GITHUB_TOKEN   — fine-grained PAT, Contents:Read/Write on pdluker/stl-status only
 //   STATUS_KV      — same namespace heartbeats already use
+//   STICKERS_SECRET — same value as the stickers Worker's STICKERS_SECRET (Bearer for
+//                    stickers.stluker.com/health). Set from ..\stl-stickers\.secret.local.
 //
 // CF API refs:
 //   list workers:  GET /accounts/{acct}/workers/scripts
@@ -146,6 +148,83 @@ export async function checkHeartbeats(env, jobs) {
 }
 
 /**
+ * stickers.stluker.com runs its OWN daily cron (50 11 * * *) and keeps its own
+ * run log in D1, so it can't write a STATUS_KV heartbeat the way dispatcher
+ * tasks do. Instead this pulls its authenticated /health and decides staleness
+ * here. ADDED 2026-09-25.
+ *
+ * Why not trust /health's own "stale" flag: it only trips after 9 AM CT, and
+ * status-sync runs at 6 AM CT (11:00 UTC) -- it would never fire from here.
+ * Instead: work out which sticker the most recent scheduled fire should have
+ * produced (today's if we're past 12:30 UTC, else yesterday's, keyed by the
+ * America/Chicago date the stickers Worker uses) and require it to exist.
+ *
+ * A 401 is reported separately from "stale": a paired secret split across two
+ * Workers can drift (the Sep 1-8 SPORTS_SECRET outage), and an auth failure
+ * must not look like a dead pipeline, or vice versa.
+ */
+const STICKERS_HEALTH_URL = "https://stickers.stluker.com/health";
+const STICKERS_CRON_UTC = { hour: 11, minute: 50 };
+const STICKERS_GRACE_MIN = 40; // flux-2-dev / lucid can take a minute or two; generous
+
+function chicagoDate(d) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
+async function checkStickersHealth(env, now = new Date()) {
+  const job = "stickers:daily";
+  if (!env.STICKERS_SECRET) {
+    return [{ type: "stickers_check_skipped", severity: "info", job, message: "STICKERS_SECRET not set on stl-dispatcher; stickers.stluker.com is not being monitored." }];
+  }
+  let res;
+  try {
+    res = await fetch(STICKERS_HEALTH_URL, {
+      headers: {
+        Authorization: `Bearer ${env.STICKERS_SECRET}`,
+        "User-Agent": "stl-dispatcher/1.0 (+https://stluker.com; internal service call)",
+        "Cache-Control": "no-cache",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (e) {
+    return [{ type: "stickers_unreachable", severity: "critical", job, message: `stickers.stluker.com/health unreachable: ${String(e)}` }];
+  }
+  if (res.status === 401) {
+    return [{ type: "stickers_auth_failed", severity: "warning", job, message: "stickers.stluker.com/health returned 401 - STICKERS_SECRET on stl-dispatcher no longer matches the stickers Worker's copy. Monitoring is blind until resynced." }];
+  }
+  if (!res.ok) {
+    return [{ type: "stickers_unreachable", severity: "critical", job, message: `stickers.stluker.com/health returned HTTP ${res.status}.` }];
+  }
+  const h = await res.json();
+
+  // Which sticker should the most recent scheduled fire have produced?
+  const fire = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), STICKERS_CRON_UTC.hour, STICKERS_CRON_UTC.minute));
+  if (now.getTime() < fire.getTime() + STICKERS_GRACE_MIN * 60000) fire.setUTCDate(fire.getUTCDate() - 1);
+  const expectedId = chicagoDate(fire);
+  const latestId = h.latestSticker?.id || null;
+
+  const findings = [];
+  if (!latestId || latestId < expectedId) {
+    const why = h.lastRun && !h.lastRun.ok ? ` Last run (${h.lastRun.sticker_id}) failed: ${String(h.lastRun.detail || "").slice(0, 200)}` : "";
+    findings.push({
+      type: "heartbeat_stale",
+      severity: "critical",
+      job,
+      lastSuccess: h.lastSuccess?.finished_at || null,
+      message: `stickers.stluker.com has no sticker for ${expectedId} (latest: ${latestId || "none"}).${why}`,
+    });
+  } else if (h.latestSticker?.image_model === "none") {
+    findings.push({
+      type: "stickers_no_art",
+      severity: "info",
+      job,
+      message: `stickers.stluker.com ${latestId} published without AI art (every image model failed that day).`,
+    });
+  }
+  return findings;
+}
+
+/**
  * Orchestrator — run all checks, fold findings into the data.json object under
  * a `verification` block plus synthesized smart recommendations. Returns the
  * mutated object for stl-status-sync to persist.
@@ -205,6 +284,9 @@ export async function reconcile(env, data) {
     // ADDED 2026-09-25: Pokemon Podcast (Daily Creature Clash, pokepod repo),
     // reduced to monthly in Sep 2026.
     { worker: "podcast", expected: "0 9 1 * *" },
+    // ADDED 2026-09-25: stickers.stluker.com (IT sticker of the day) runs its
+    // own native cron, like rails-beneath-us -- not a dispatcher task.
+    { worker: "stickers", expected: "50 11 * * *" },
   ];
   const trackedWorkers = [
     "stluker", "family", "stl-sports", "stl-music", "stl-bucket",
@@ -244,6 +326,7 @@ export async function reconcile(env, data) {
     "innovation-daily", // untracked, purpose/status unconfirmed — verify before treating as permanently expected
     "mech-match",       // untracked, purpose/status unconfirmed — verify before treating as permanently expected
     "bigbuilds",        // untracked, purpose/status unconfirmed — verify before treating as permanently expected
+    "stickers",         // stickers.stluker.com — IT sticker of the day, own cron + D1/R2. ADDED 2026-09-25; freshness via checkStickersHealth()
   ];
   const heartbeatJobs = [
     { job: "stl-dispatcher:keepalive", maxAgeHours: 24 * 6 }, // every 5 days + grace
@@ -289,6 +372,7 @@ export async function reconcile(env, data) {
     ...(await safe(() => checkCronDrift(env, declaredCrons))),
     ...(await safe(() => checkWorkerInventory(env, trackedWorkers))),
     ...(await safe(() => checkHeartbeats(env, heartbeatJobs))),
+    ...(await safe(() => checkStickersHealth(env))),
   ];
 
   data.verification = {
