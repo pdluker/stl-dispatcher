@@ -1531,7 +1531,141 @@ async function generateScript(env, digest, quote, diagnostics) {
   };
 }
 
-const IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
+// ADDED 2026-09-27: replaces the single-model, no-fallback cover-image call
+// below (which shipped every episode since Aug 22 on flux-1-schnell alone).
+// Confirmed via a Sep 27 episode that had a clean audio publish but no cover
+// image: audio (ElevenLabs) and image (this Workers AI call) are fully
+// independent paths joined only by Promise.allSettled in runPodcastIngest,
+// so any transient failure here -- rate limit, timeout, a bad response
+// shape -- silently drops the day's art with no second attempt and no
+// visible error anywhere except episode.imageError. Ported from
+// stl-stickers' runImageModel()/makeArt() chain (same Cloudflare account,
+// same AI binding, live since Sep 26) rather than reinvented from scratch,
+// because that code already handles the fact that flux-2-dev needs
+// multipart form-data (not the {prompt,steps} JSON shape flux-1-schnell
+// takes) and that lucid-origin needs its own distinct parameter set --
+// getting either of those wrong here would just trade one silent failure
+// mode for another.
+const IMAGE_MODEL_IDS = {
+  flux2: "@cf/black-forest-labs/flux-2-dev",
+  lucid: "@cf/leonardo/lucid-origin",
+  schnell: "@cf/black-forest-labs/flux-1-schnell",
+};
+// Podcast cover art wants a photoreal "scene" look (see COVER IMAGE PROMPT
+// in SYSTEM_PROMPT: "painterly, photographic, or illustrative... not
+// chart/graph language"), which is FLUX.2's strength per stl-stickers' own
+// A/B testing (Lucid was chosen there for "glossy clip-art" / "bold
+// mascot illustration" styles, neither of which fits a news-briefing
+// cover). Lucid is kept as a second attempt anyway, purely for resilience
+// -- a stylistically-imperfect cover still beats no cover on a bad day.
+const IMAGE_MODEL_CHAIN = ["flux2", "lucid", "schnell"];
+const COVER_SIZE = [1024, 1024];
+
+function imageModelChain(env) {
+  const ids = {
+    flux2: env.IMAGE_MODEL || IMAGE_MODEL_IDS.flux2,
+    lucid: env.LUCID_MODEL || IMAGE_MODEL_IDS.lucid,
+    schnell: env.IMAGE_FALLBACK_MODEL || IMAGE_MODEL_IDS.schnell,
+  };
+  // Override without a code change via wrangler.jsonc var PODCAST_IMAGE_MODELS,
+  // e.g. ["flux2","schnell"] -- same escape hatch stl-stickers exposes as
+  // STYLE_IMAGE_MODELS.
+  let order = IMAGE_MODEL_CHAIN;
+  if (env.PODCAST_IMAGE_MODELS) {
+    try {
+      const parsed = JSON.parse(env.PODCAST_IMAGE_MODELS);
+      if (Array.isArray(parsed) && parsed.length) order = parsed;
+    } catch { /* invalid JSON in the var -- keep the built-in default chain */ }
+  }
+  return [...new Set(order.map((k) => ids[k] || k))];
+}
+
+// Workers AI image models do not all answer in the same shape -- base64
+// string in .image, a ReadableStream, or raw bytes. Same handling the old
+// single-model code already had, just factored out so every model in the
+// chain can use it.
+async function imageResultToBytes(out) {
+  if (typeof out?.image === "string") {
+    const bin = atob(out.image.replace(/^data:[^;]+;base64,/, ""));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  if (out instanceof ReadableStream) {
+    const chunks = [];
+    const reader = out.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(chunks.reduce((a, c) => a + c.length, 0));
+    let offset = 0;
+    for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
+    return bytes;
+  }
+  if (out instanceof ArrayBuffer) return new Uint8Array(out);
+  if (out instanceof Uint8Array) return out;
+  throw new Error(`unrecognized Workers AI response shape: ${typeof out}`);
+}
+
+// ADDED 2026-09-27: the models in the chain don't all return the same image
+// format, so the stored key/content-type can't be hardcoded to .jpg any more
+// (stl-stickers sniffs for the same reason). Only JPEG and PNG are accepted:
+// those are the only formats Apple Podcasts allows for itunes:image, and
+// this image also becomes the channel artwork (pod-worker.js buildFeed). Any
+// other format throws, so the chain moves on to the next model instead of
+// publishing art podcast apps will reject.
+function sniffImageType(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { ext: "jpg", contentType: "image/jpeg" };
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return { ext: "png", contentType: "image/png" };
+  const head = Array.from(bytes.subarray(0, 4), (b) => b.toString(16).padStart(2, "0")).join(" ");
+  throw new Error(`unsupported image format (first bytes ${head}); only JPEG/PNG are valid podcast artwork`);
+}
+
+// ADDED 2026-09-27: per-attempt cap. The episode publish waits on this chain
+// (Promise.allSettled with TTS), so one hung model call would otherwise hold
+// the whole episode until the Worker's wall-clock limit. On timeout the
+// underlying AI.run is abandoned, not cancelled -- the binding takes no
+// abort signal -- but the chain moves on to the next model.
+const IMAGE_ATTEMPT_TIMEOUT_MS = 90_000;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Each model family takes a genuinely different call shape -- confirmed
+// against Cloudflare's own docs for flux-2-dev (multipart form-data,
+// required) and against stl-stickers' live, working call for lucid-origin
+// (JSON with width/height/guidance/num_steps, not steps).
+async function runImageModel(env, model, prompt) {
+  let out;
+  if (model.includes("flux-2")) {
+    const form = new FormData();
+    form.append("prompt", prompt);
+    form.append("width", String(COVER_SIZE[0]));
+    form.append("height", String(COVER_SIZE[1]));
+    if (model.includes("flux-2-dev")) form.append("steps", "28");
+    const packed = new Response(form);
+    out = await env.AI.run(model, { multipart: { body: packed.body, contentType: packed.headers.get("content-type") } });
+  } else if (model.includes("lucid-origin") || model.includes("phoenix")) {
+    out = await env.AI.run(model, { prompt: prompt.slice(0, 2000), width: COVER_SIZE[0], height: COVER_SIZE[1], guidance: 6, num_steps: 30 });
+  } else {
+    // flux-1-schnell -- CHANGED 2026-08-22: `steps` not `num_steps` (see the
+    // Aug 22 incident this same fix originally addressed: `num_steps` is not
+    // a valid parameter for this model and was a flat, deterministic
+    // rejection, not a quota or budget issue).
+    out = await env.AI.run(model, { prompt, steps: 4 });
+  }
+  const bytes = await imageResultToBytes(out);
+  if (bytes.byteLength < 500) throw new Error(`${model} returned only ${bytes.byteLength} bytes -- treating as failure`);
+  return { bytes, ...sniffImageType(bytes) };
+}
+
 async function generateCoverImage(env, imagePrompt, diagnostics) {
   if (!imagePrompt) {
     diagnostics.push({ step: "image", ok: false, error: "no imagePrompt from script generation; skipping" });
@@ -1541,56 +1675,31 @@ async function generateCoverImage(env, imagePrompt, diagnostics) {
     diagnostics.push({ step: "image", ok: false, error: "AI binding not present; skipping (episode still publishes with static cover.jpg)" });
     return null;
   }
-  try {
-    // CHANGED 2026-08-22: was `num_steps: 4`. Confirmed via Cloudflare's
-    // current flux-1-schnell docs that the accepted parameter is `steps`
-    // (integer, default 4, max 8) -- `num_steps` was never valid against
-    // this model's schema and produced a hard validation rejection:
-    //   5006: Error: Additional or unevaluated properties '/num_steps' at
-    //   '/' not allowed
-    // This is why every episode from roughly Aug 15 onward shipped with no
-    // cover image: not a subrequest-budget issue, not a Workers AI quota
-    // issue (both of which were reasoned about and deliberately NOT acted on
-    // without confirmation) -- a flat, deterministic API rejection that
-    // fires identically regardless of content or invocation size, which
-    // matches the observed 100% failure rate exactly.
-    const result = await env.AI.run(IMAGE_MODEL, { prompt: imagePrompt, steps: 4 });
-    let bytes;
-    if (result instanceof ReadableStream) {
-      const chunks = [];
-      const reader = result.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-      bytes = new Uint8Array(chunks.reduce((a, c) => a + c.length, 0));
-      let offset = 0;
-      for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
-    } else if (result?.image) {
-      const bin = atob(result.image);
-      bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    } else if (result instanceof ArrayBuffer) {
-      bytes = new Uint8Array(result);
-    } else {
-      throw new Error(`unrecognized Workers AI response shape: ${typeof result}`);
+  const chain = imageModelChain(env);
+  const errors = [];
+  for (const model of chain) {
+    try {
+      // Returns { bytes, ext, contentType } -- the caller builds the R2 key
+      // and content-type from the sniffed format, not a hardcoded .jpg.
+      const image = await withTimeout(runImageModel(env, model, imagePrompt), IMAGE_ATTEMPT_TIMEOUT_MS, model);
+      diagnostics.push({
+        step: "image", ok: true, bytes: image.bytes.byteLength, format: image.ext, model,
+        attemptedModels: chain,
+        priorFailures: errors.length ? errors.slice() : undefined
+      });
+      return image;
+    } catch (err) {
+      // ADDED 2026-08-15 (kept): visible live via `wrangler tail`; the
+      // episode.imageError field set by the caller is what makes it visible
+      // after the fact too, once every model in the chain has been tried.
+      console.error(`[stl-dispatcher] cover image model ${model} failed: ${err.message}`);
+      errors.push(`${model}: ${err.message}`);
+      diagnostics.push({ step: "image-attempt", ok: false, model, error: err.message });
     }
-    if (bytes.byteLength < 500) throw new Error(`image response only ${bytes.byteLength} bytes -- treating as failure`);
-    diagnostics.push({ step: "image", ok: true, bytes: bytes.byteLength, model: IMAGE_MODEL });
-    return bytes;
-  } catch (err) {
-    // ADDED 2026-08-15: image failures previously only existed in the
-    // `diagnostics` array, which is returned to the CALLER of /trigger but is
-    // never persisted anywhere for a scheduled (cron) run -- meaning every
-    // "no poster today" day up to now was structurally undiagnosable after
-    // the fact. This log line is at minimum visible live via `wrangler tail`;
-    // the episode.imageError field added below is what makes it visible
-    // after the fact too.
-    console.error(`[stl-dispatcher] cover image generation failed: ${err.message}`);
-    diagnostics.push({ step: "image", ok: false, error: err.message });
-    return null;
   }
+  const combined = errors.join(" | ");
+  diagnostics.push({ step: "image", ok: false, error: combined, attemptedModels: chain });
+  return null;
 }
 
 // ADDED 2026-08-14: TTS-only prosody pass. toSpeakableAscii() converts em
@@ -1896,7 +2005,8 @@ export async function runPodcastIngest(env, opts = {}) {
     ]);
     if (audioResult.status === "rejected") throw audioResult.reason;
     const audio = audioResult.value;
-    const imageBytes = imageResult.status === "fulfilled" ? imageResult.value : null;
+    // { bytes, ext, contentType } from generateCoverImage, or null.
+    const image = imageResult.status === "fulfilled" ? imageResult.value : null;
     // ADDED 2026-08-15: capture the reason as a plain string on the episode
     // record itself (see episode.imageError below), not just in the
     // ephemeral diagnostics array. This is what makes a "no poster today"
@@ -1907,7 +2017,7 @@ export async function runPodcastIngest(env, opts = {}) {
     if (imageResult.status === "rejected") {
       imageErrorReason = `unexpected throw: ${imageResult.reason}`;
       diagnostics.push({ step: "image", ok: false, error: imageErrorReason });
-    } else if (!imageBytes) {
+    } else if (!image) {
       const imgStep = diagnostics.find((d) => d.step === "image" && d.ok === false);
       imageErrorReason = imgStep?.error || "cover image generation failed for an unrecorded reason";
     }
@@ -1917,10 +2027,12 @@ export async function runPodcastIngest(env, opts = {}) {
     diagnostics.push({ step: "r2", ok: true, key: objectKey, bytes: audio.byteLength });
 
     let imageKey = null;
-    if (imageBytes) {
-      imageKey = `episodes/${day}.jpg`;
-      await env.POD_BUCKET.put(imageKey, imageBytes, { httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" } });
-      diagnostics.push({ step: "r2-image", ok: true, key: imageKey, bytes: imageBytes.byteLength });
+    if (image) {
+      // CHANGED 2026-09-27: extension and content-type follow the sniffed
+      // format (jpg or png). pod-worker.js serves both at /episodes/<day>.<ext>.
+      imageKey = `episodes/${day}.${image.ext}`;
+      await env.POD_BUCKET.put(imageKey, image.bytes, { httpMetadata: { contentType: image.contentType, cacheControl: "public, max-age=31536000, immutable" } });
+      diagnostics.push({ step: "r2-image", ok: true, key: imageKey, bytes: image.bytes.byteLength, contentType: image.contentType });
     }
 
     const episodeNumber = reusedEpisodeNumber || await nextEpisodeNumber(env.PODCAST_KV);
