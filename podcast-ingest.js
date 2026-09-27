@@ -1397,6 +1397,54 @@ function parseScriptJson(text) {
   }
 }
 
+const FILL_SCHEMA = {
+  type: "object",
+  properties: {
+    reflection: SCRIPT_SCHEMA.properties.reflection,
+    imagePrompt: SCRIPT_SCHEMA.properties.imagePrompt,
+    organizingIdea: SCRIPT_SCHEMA.properties.organizingIdea,
+    claims: SCRIPT_SCHEMA.properties.claims
+  },
+  required: ["reflection", "imagePrompt", "organizingIdea", "claims"],
+  additionalProperties: false
+};
+
+// ADDED 2026-09-27: see the empty-field check at the end of generateScript.
+// Same SYSTEM_PROMPT block (so it's a cache hit) and the same rules for
+// each field; only the task changes. Never throws -- a failure here leaves
+// the episode exactly as it would have been without the retry.
+async function fillMissingFields(env, digest, quote, script, diagnostics) {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
+      body: JSON.stringify({
+        model: SCRIPT_MODEL,
+        max_tokens: 4000,
+        thinking: HELPER_THINKING,
+        output_config: { format: { type: "json_schema", schema: FILL_SCHEMA } },
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        messages: [{
+          role: "user",
+          content: `Today's script has already been written (below) but the reflection, imagePrompt, organizingIdea, and claims fields came back empty. Do NOT rewrite the script. Fill in all four fields for THIS script, following your instructions for each: the reflection (60-100 words, containing the quotation verbatim), the cover image prompt, the organizing idea the script actually uses, and a claims entry for every load-bearing fact in the script with the exact source id it came from.\n\nSOURCE MATERIAL:\n${digest}\n\nQUOTATION TO USE IN THE REFLECTION, verbatim, attributed to ${quote.who}:\n"${quote.text}"\n\nTHE SCRIPT:\n${script}`
+        }]
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 150)}`);
+    const data = await res.json();
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+    const parsed = parseScriptJson(text);
+    diagnostics.push({
+      step: "script-fill", ok: true, outputTokens: data.usage?.output_tokens ?? null,
+      filled: ["reflection", "imagePrompt", "organizingIdea"].filter((k) => (parsed[k] || "").trim()).concat((parsed.claims || []).length ? ["claims"] : [])
+    });
+    return parsed;
+  } catch (err) {
+    diagnostics.push({ step: "script-fill", ok: false, error: String(err.message || err).slice(0, 200) });
+    return null;
+  }
+}
+
 async function generateScript(env, digest, quote, diagnostics) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1458,6 +1506,21 @@ async function generateScript(env, digest, quote, diagnostics) {
     }
     diagnostics.push({ step: "script", ok: true, note: "response was not valid JSON; using raw text, claims unaudited, no image prompt" });
     script = text;
+  }
+  // ADDED 2026-09-27: the schema guarantees every key is present, not that
+  // it's filled. The Sep 27 episode came back with a full script and empty
+  // reflection/imagePrompt/organizingIdea/claims -- so it shipped with no
+  // reflection, no quote, no cover art ("no imagePrompt ... skipping"), and
+  // an unaudited script. One targeted follow-up asks for just the missing
+  // pieces for the script that already exists, rather than regenerating it.
+  if (script && (!reflection.trim() || !imagePrompt.trim() || !organizingIdea.trim() || !claims.length)) {
+    const filled = await fillMissingFields(env, digest, quote, script, diagnostics);
+    if (filled) {
+      if (!reflection.trim()) reflection = filled.reflection || "";
+      if (!imagePrompt.trim()) imagePrompt = filled.imagePrompt || "";
+      if (!organizingIdea.trim()) organizingIdea = filled.organizingIdea || "";
+      if (!claims.length) claims = filled.claims || [];
+    }
   }
   return {
     script: toSpeakableAscii(script),
