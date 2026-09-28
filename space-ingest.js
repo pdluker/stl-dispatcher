@@ -53,6 +53,27 @@
  * completing the "tonight" card's roadmap-named ISS-passes feature, which
  * had never actually been built despite moon phase shipping. Both fail soft
  * into meta.diagnostics like every other source.
+ *
+ * CHANGED 2026-08-04: added imageUrl extraction, wired end to end into the
+ * summarized output — RSS via media:content/media:thumbnail/enclosure
+ * (checked in that priority order) with a raw <img src> sniff over
+ * content:encoded/description as a last resort; SNAPI via its own
+ * image_url field. All three paths run through isValidImageUrl() (absolute
+ * http/https only) before anything reaches KV. At cluster time, a story
+ * without an image on its representative item still checks every other
+ * item in its cluster (same story from other outlets) before giving up —
+ * see summarizeClusters().
+ *
+ * CHANGED 2026-09-28: re-merged. From Aug 4 to Sep 28 this file existed as
+ * two diverged copies — stl-dispatcher's (deployed; had the Jul 25
+ * Skip/index-matching fix) and the space repo's (had imageUrl and the
+ * ll2-launches KV fallback chain, never deployed). Net effect: the GitHub
+ * Action kept writing correct launches to SPACE_KV["ll2-launches"] every 6h
+ * while the deployed ingest never read that key, so the dashboard showed
+ * "Nothing on the pad" whenever LL2 429'd the Worker. This file is now the
+ * single merged version; the space repo's copy must stay byte-identical
+ * (its GitHub Action imports fetchUpcomingLaunches/fetchSpaceXFallbackLaunches
+ * from it).
  */
 
 // ---------------------------------------------------------------------------
@@ -163,6 +184,10 @@ export async function fetchSpaceflightNewsArticles(fetchImpl = fetch) {
         // above — keeps Haiku prompt size consistent regardless of which
         // source a story came from.
         description: a.summary ? String(a.summary).slice(0, 500) : "",
+        // SNAPI gives a clean, dedicated image_url per article (usually the
+        // outlet's own hero image) — no HTML-sniffing needed, unlike the RSS
+        // path above. Still validated for consistency with the RSS path.
+        imageUrl: isValidImageUrl(a.image_url) ? a.image_url : null,
       }));
 
     return { feed: SNAPI_FEED_DESCRIPTOR, items, error: null };
@@ -181,6 +206,7 @@ export function parseRssItems(xml) {
     const link = extractLink(block);
     const pubDate = extractTag(block, "pubDate") || extractTag(block, "published") || extractTag(block, "updated");
     const description = extractTag(block, "description") || extractTag(block, "summary");
+    const contentEncoded = extractTag(block, "content:encoded");
 
     if (!title || !link) continue;
 
@@ -189,9 +215,49 @@ export function parseRssItems(xml) {
       link: link.trim(),
       pubDate: pubDate ? new Date(pubDate).toISOString() : null,
       description: description ? decodeEntities(stripCdata(description)).replace(/<[^>]+>/g, "").trim().slice(0, 500) : "",
+      imageUrl: extractImageUrl(block, contentEncoded, description),
     });
   }
   return items;
+}
+
+// Image extraction for card thumbnails. Tries the common RSS/Atom image
+// carriers in order of reliability, falls back to sniffing an <img src="...">
+// out of whatever HTML the feed embeds in description/content — fails soft
+// (null) rather than throwing. media:content/thumbnail and enclosure come
+// first because the <img> sniff is more likely to catch a tracking pixel.
+function extractImageUrl(block, contentEncoded, description) {
+  // 1. media:content / media:thumbnail (Media RSS — used by NASA, ESA, many others)
+  let m = block.match(/<media:content[^>]*url="([^"]+)"[^>]*medium="image"/i)
+    || block.match(/<media:content[^>]*medium="image"[^>]*url="([^"]+)"/i)
+    || block.match(/<media:content[^>]*url="([^"]+\.(?:jpe?g|png|webp|gif))"/i)
+    || block.match(/<media:thumbnail[^>]*url="([^"]+)"/i);
+  if (m && isValidImageUrl(decodeEntities(m[1]))) return decodeEntities(m[1]);
+
+  // 2. <enclosure url="..." type="image/...">
+  m = block.match(/<enclosure[^>]*type="image\/[^"]*"[^>]*url="([^"]+)"/i)
+    || block.match(/<enclosure[^>]*url="([^"]+)"[^>]*type="image\/[^"]*"/i);
+  if (m && isValidImageUrl(decodeEntities(m[1]))) return decodeEntities(m[1]);
+
+  // 3. First <img src="..."> in content:encoded or description HTML. Entities
+  // decoded first — descriptions often arrive as &lt;img&gt;-escaped text.
+  const htmlBlob = decodeEntities((contentEncoded || "") + (description || ""));
+  m = htmlBlob.match(/<img[^>]*src="([^"]+)"/i);
+  if (m && isValidImageUrl(m[1])) return m[1];
+
+  return null;
+}
+
+// Only absolute http(s) URLs are ever allowed through to KV/the frontend —
+// guards against relative paths, data: URIs, and similar garbage.
+function isValidImageUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function extractTag(block, tag) {
@@ -413,6 +479,11 @@ export async function summarizeClusters(clusters, env, fetchImpl = fetch) {
         clusterOf: cluster.clusterOf,
         sources: [...new Set(cluster.sources)],
         whyItMatters: entry.whyItMatters || null,
+        // Prefer the representative's own image, but another outlet in the
+        // same cluster may carry one even if the first-seen item didn't.
+        imageUrl: cluster.representative.imageUrl
+          || cluster.allItems.find((i) => i.imageUrl)?.imageUrl
+          || null,
       });
     });
 
@@ -647,6 +718,126 @@ export function mapLl2Response(data) {
 }
 
 // ---------------------------------------------------------------------------
+// 5a. Launch data resilience layer
+//
+// ADDED 2026-08-04 (space repo), DEPLOYED 2026-09-28: LL2's anonymous tier is
+// contended across every Cloudflare Workers customer sharing the platform's
+// egress IP pool — confirmed `authenticated=false` 429s in production. A
+// scheduled GitHub Actions job (space repo, scripts/fetch-ll2-to-kv.mjs, runs
+// from GitHub's IP range) calls fetchUpcomingLaunches() below and writes the
+// result into SPACE_KV under LL2_KV_KEY every ~6h. This is what the ingest
+// reads first, falling through KV → a direct in-Worker LL2 attempt → the
+// SpaceX community API → an error for runSpaceIngest()'s stale carry-forward.
+// ---------------------------------------------------------------------------
+
+const LL2_KV_KEY = "ll2-launches";
+const LL2_KV_STALE_MS = 24 * 3600 * 1000; // GH Action runs every 6h; 24h tolerates a few missed runs
+// NOTE 2026-09-28: api.spacexdata.com returned HTTP 525 when checked; the
+// project has been unmaintained for years. Kept as a last resort because the
+// GitHub Action imports it, but don't expect it to rescue an LL2 outage.
+const SPACEX_QUERY_URL = "https://api.spacexdata.com/v5/launches/query";
+
+export async function fetchSpaceXFallbackLaunches(fetchImpl = fetch) {
+  const lastFetch = new Date().toISOString();
+  try {
+    const res = await fetchImpl(SPACEX_QUERY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: { upcoming: true },
+        options: {
+          populate: [
+            { path: "rocket", select: "name" },
+            { path: "launchpad", select: "name locality region" },
+          ],
+          limit: 20,
+          // SpaceX-API's server-side sort has been unreliable (see
+          // github.com/r-spacex/SpaceX-API/issues/996) — sorted client-side below.
+        },
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const now = Date.now();
+    const sevenDays = now + 7 * 24 * 3600 * 1000;
+
+    const launches = (data.docs || [])
+      .map((l) => ({
+        id: "spacex-" + l.id,
+        vehicle: (l.rocket && l.rocket.name) || "Falcon 9",
+        mission: l.name || "Unnamed mission",
+        provider: "SpaceX",
+        pad: l.launchpad?.name ? `${l.launchpad.name}, ${l.launchpad.locality || ""}`.trim() : "TBD",
+        windowStart: l.date_utc,
+        status: l.tbd ? "TBD" : "Go",
+        source: "SpaceX API (fallback — SpaceX launches only)",
+      }))
+      .filter((l) => {
+        const t = new Date(l.windowStart).getTime();
+        if (Number.isNaN(t)) return true;
+        return t >= now && t <= sevenDays;
+      })
+      .sort((a, b) => new Date(a.windowStart) - new Date(b.windowStart));
+
+    return { launches, error: null, debug: { lastFetch, source: "spacex-fallback" } };
+  } catch (err) {
+    return { launches: [], error: String(err.message || err), debug: { lastFetch, source: "spacex-fallback" } };
+  }
+}
+
+async function readLl2FromKv(env) {
+  try {
+    const raw = await env.SPACE_KV.get(LL2_KV_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const age = Date.now() - new Date(parsed.fetchedAt).getTime();
+    if (Number.isNaN(age) || age > LL2_KV_STALE_MS) return null;
+    // The Action's 7-day window was computed up to LL2_KV_STALE_MS ago, so a
+    // launch in it may already have flown. Drop those here rather than show a
+    // departed rocket as "upcoming". A missing/malformed windowStart is kept,
+    // matching mapLl2Response's TBD handling.
+    const now = Date.now();
+    const launches = (parsed.launches || []).filter((l) => {
+      const t = new Date(l.windowStart).getTime();
+      return Number.isNaN(t) || t >= now;
+    });
+    return { ...parsed, launches };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchLaunchesWithFallback(env, fetchImpl = fetch) {
+  // 1. GitHub Action's KV write — the primary path, off the contended pool.
+  const fromKv = await readLl2FromKv(env);
+  if (fromKv && Array.isArray(fromKv.launches) && fromKv.launches.length > 0) {
+    return {
+      launches: fromKv.launches,
+      error: null,
+      asOf: fromKv.fetchedAt,
+      debug: { ...fromKv.debug, source: "ll2-kv", fetchedAt: fromKv.fetchedAt },
+    };
+  }
+
+  // 2. Direct in-Worker LL2 call — occasionally still succeeds even on the
+  // contended pool, so worth one attempt before giving up on LL2.
+  const direct = await fetchUpcomingLaunches(env, fetchImpl);
+  if (!direct.error && direct.launches.length > 0) {
+    return { ...direct, asOf: direct.debug?.lastLL2Fetch || null, debug: { ...direct.debug, source: "ll2-direct" } };
+  }
+
+  // 3. SpaceX fallback — independent source, SpaceX-only coverage.
+  const spacex = await fetchSpaceXFallbackLaunches(fetchImpl);
+  if (!spacex.error && spacex.launches.length > 0) {
+    return { ...spacex, asOf: spacex.debug.lastFetch, debug: { ...spacex.debug, source: "spacex-fallback" } };
+  }
+
+  // 4. Everything failed — surface LL2's error (the primary source) and let
+  // runSpaceIngest's stale carry-forward take over.
+  return { launches: [], error: direct.error || spacex.error || "all launch sources failed", asOf: null, debug: direct.debug };
+}
+
+// ---------------------------------------------------------------------------
 // 5b. "Tonight's Sky" — the one feature a generic aggregator structurally can't
 // do, since it's grounded in one specific location instead of serving everyone.
 // Moon phase is computed locally (no network call, so it always works even if
@@ -797,7 +988,7 @@ export async function runSpaceIngest(env, fetchImpl = fetch) {
   const [feedResults, snapiResult, ll2Result, tonight] = await Promise.all([
     Promise.all(FEEDS.map((f) => fetchFeed(f, fetchImpl))),
     fetchSpaceflightNewsArticles(fetchImpl),
-    fetchUpcomingLaunches(env, fetchImpl),
+    fetchLaunchesWithFallback(env, fetchImpl),
     buildTonightSky(fetchImpl),
   ]);
 
@@ -808,7 +999,9 @@ export async function runSpaceIngest(env, fetchImpl = fetch) {
   const sourcesErrored = feedResults.filter((r) => r.error).map((r) => ({ name: r.feed.name, error: r.error }));
   let { launches, error: ll2Error, debug: ll2Debug } = ll2Result;
   let launchesStale = false;
-  let launchesAsOf = startedAt;
+  // When served from the GitHub Action's KV write, the data is as old as that
+  // write (up to ~6h), not as old as this run — report the real age.
+  let launchesAsOf = ll2Result.asOf || startedAt;
 
   // ADDED 2026-07-24: per-source diagnostics ({name, count, error}) for all 14
   // feeds + LL2, ported from the same pattern already shipped in stl-sports
@@ -854,6 +1047,10 @@ export async function runSpaceIngest(env, fetchImpl = fetch) {
     name: "Launch Library 2",
     count: launches.length,
     authenticated: ll2Debug?.authenticated ?? false,
+    // Which tier of fetchLaunchesWithFallback served this run: "ll2-kv"
+    // (GitHub Action, the healthy path), "ll2-direct", "spacex-fallback", or
+    // null if the whole chain came back empty.
+    source: ll2Debug?.source ?? null,
     error: launchesStale ? `${ll2Error} (serving ${launches.length} carried-forward stale launches)` : ll2Error,
   });
 
