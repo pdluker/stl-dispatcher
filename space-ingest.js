@@ -92,10 +92,16 @@ export const FEEDS = [
   { name: "Universe Today", url: "https://www.universetoday.com/feed/", category: "Astronomy" },
   { name: "SpaceQ", url: "https://spaceq.ca/feed/", category: "Industry" },
   { name: "SpaceDaily", url: "https://www.spacedaily.com/spacedaily.xml", category: "General" },
-  { name: "Sky & Telescope", url: "https://skyandtelescope.org/feed/", category: "Astronomy" },
-  { name: "SpaceRef", url: "https://spaceref.com/feed/", category: "General" },
   { name: "Phys.org Space", url: "https://phys.org/rss-feed/space-news/", category: "Astronomy" },
   { name: "ESA", url: "https://www.esa.int/rssfeed/Our_Activities", category: "Mission" },
+  // REMOVED 2026-09-28, both confirmed by direct fetch:
+  //   "Sky & Telescope" — https://skyandtelescope.org/feed/ now answers with a
+  //     Cloudflare "Just a moment..." challenge (HTTP 403) to non-browser clients.
+  //   "SpaceRef" — https://spaceref.com/feed/ 301s to an HTML article
+  //     (/space-conquest-history/), so it reported count 0 with no error.
+  // Space.com is kept: on Sep 28 it served a valid but empty RSS channel,
+  // which may be temporary. dispatcher.js's zero-count streak check flags it
+  // (and any other feed) after 3 consecutive empty runs.
   // REMOVED 2026-07-21 after first live run confirmed both 404 (feed URL drift, not a
   // transient error — confirmed via two consecutive fetches in the same run):
   //   "The Space Review"  — https://www.thespacereview.com/rss/rss.xml

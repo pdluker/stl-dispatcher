@@ -142,6 +142,18 @@ export async function checkHeartbeats(env, jobs) {
         ageHours: Math.round(ageHours),
         message: `${job} last succeeded ${Math.round(ageHours)}h ago (expected within ${maxAgeHours}h).`,
       });
+    } else if (hb.meta?.quality === "degraded") {
+      // ADDED 2026-09-28: a run that completed but produced bad output (e.g.
+      // zero launches, most feeds empty). Warning, not critical — the page
+      // still renders — but it emails, because on Sep 28 exactly this state
+      // showed readers "Nothing on the pad" with every check green.
+      findings.push({
+        type: "heartbeat_degraded",
+        severity: "warning",
+        job,
+        lastSuccess: hb.lastSuccess,
+        message: `${job} ran but output was degraded: ${(hb.meta.qualityReasons || []).join("; ") || "no reason recorded"}.`,
+      });
     }
   }
   return findings;
@@ -154,7 +166,9 @@ export async function checkHeartbeats(env, jobs) {
  * here. ADDED 2026-09-25.
  *
  * Why not trust /health's own "stale" flag: it only trips after 9 AM CT, and
- * status-sync runs at 6 AM CT (11:00 UTC) -- it would never fire from here.
+ * status-sync runs at ~7 AM CT (11:55 UTC since 2026-09-28; 11:00 before) --
+ * it would never fire from here. At 11:55 the grace window below still
+ * points at yesterday's sticker, same as before the move.
  * Instead: work out which sticker the most recent scheduled fire should have
  * produced (today's if we're past 12:30 UTC, else yesterday's, keyed by the
  * America/Chicago date the stickers Worker uses) and require it to exist.
@@ -251,7 +265,8 @@ export async function reconcile(env, data) {
     // separate Workers' own triggers or as gates inside runAll() -- they are
     // now stl-dispatcher crons instead, so the old standalone "stl-bucket"
     // entry that used to sit below this block has been folded in here.
-    { worker: "stl-dispatcher", expected: "0 11 * * *" },            // keepalive + statusSync
+    { worker: "stl-dispatcher", expected: "0 11 * * *" },            // keepalive
+    { worker: "stl-dispatcher", expected: "55 11 * * *" },           // statusSync (this check) -- moved from 11:00 on 2026-09-28
     { worker: "stl-dispatcher", expected: "5 11 * * FRI" },          // stlBucket
     { worker: "stl-dispatcher", expected: "10 11 * * *" },           // spaceIngest
     { worker: "stl-dispatcher", expected: "15 11 * * *" },           // earthIngest
@@ -339,9 +354,15 @@ export async function reconcile(env, data) {
     // podcast-ingest matters most: it's the only user-facing daily deliverable,
     // it now runs on its own separate cron, and both times it broke (Aug 1-2,
     // Aug 6) it was noticed by a human missing the episode, not by any check.
-    { job: "stl-dispatcher:podcast-ingest", maxAgeHours: 30 }, // daily; grace for TTS/upload
-    { job: "stl-dispatcher:space-ingest", maxAgeHours: 30 },   // daily + grace
-    { job: "stl-dispatcher:earth-ingest", maxAgeHours: 30 },   // daily + grace
+    // TIGHTENED 2026-09-28 from 30h to 20h: this check now runs at 11:55 UTC,
+    // after the 11:10/11:15/11:30 runs. A run that succeeded today is <1h
+    // old; one that failed today leaves yesterday's (~24.7h). 30h let that
+    // failure through until the NEXT day's check (~48h to alert); 20h
+    // catches it the same morning while leaving room for manual /trigger
+    // runs late the previous day.
+    { job: "stl-dispatcher:podcast-ingest", maxAgeHours: 20 }, // daily 11:30
+    { job: "stl-dispatcher:space-ingest", maxAgeHours: 20 },   // daily 11:10
+    { job: "stl-dispatcher:earth-ingest", maxAgeHours: 20 },   // daily 11:15
     // ADDED 2026-08-23: four more confirmed via a literal grep of every
     // recordHeartbeat() call in dispatcher.js (not assumed by naming
     // convention -- two of these don't follow the "stl-dispatcher:" prefix

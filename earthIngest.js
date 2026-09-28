@@ -413,30 +413,64 @@ function computeNmszStatus(events) {
 // that would require fabricating a number from data we don't have. This is a
 // same-day activity-level snapshot, not a trend against history yet (that
 // needs a stored baseline — Tier B, not built here).
-const PULSE_WEIGHTS = {
-  perSignificantQuake: 8,
-  regionActive: 15, // NMSZ or Yellowstone showing any activity
-  perWildfire: 3,
-  perStorm: 5,
-  perIceEvent: 2,
-  perNewVolcanicActivity: 4,
-  perContinuingVolcanicActivity: 1,
+//
+// REBUILT 2026-09-28: the old flat per-item weights pinned the score at 100
+// almost every day. After the Aug 26 switch to EONET status=open, the
+// wildfire count sat at its display cap (30) most days — 30 x 3 = 90 points
+// from wildfires alone, including prescribed burns. On Sep 28 it read "100 /
+// HIGH" with zero significant quakes and a quiet NMSZ/Yellowstone. A live
+// check that day found 142 "open" EONET wildfires, of which 13 were
+// prescribed burns and only 1 had a geometry update in the past 7 days —
+// EONET "open" mostly means "not yet closed", not "burning now".
+// Now: each category contributes points up to its own cap, so no single
+// category can saturate the score; wildfires count only non-prescribed fires
+// updated in the last PULSE_WILDFIRE_RECENT_DAYS; storms are weighted by
+// intensity. Component points and any categories that failed to load are
+// returned alongside the score so the number can be explained, and a
+// missing source is never silently scored as "quiet".
+const PULSE_WILDFIRE_RECENT_DAYS = 14;
+const HURRICANE_STRENGTH_KTS = 64;
+const PULSE_COMPONENTS = {
+  significantQuakes: { per: 12, cap: 36 },
+  regionalWatch: { per: 5, cap: 10 },          // NMSZ / Yellowstone with any event in 24h
+  wildfires: { per: 1.5, cap: 15 },            // non-prescribed, updated in the last 14 days
+  storms: { per: 2, cap: 24 },                 // tropical-storm strength or unknown
+  hurricaneStrengthStorms: { per: 6, cap: 24 }, // >= 64 kt; shares the storms cap
+  ice: { per: 1, cap: 5 },
+  newVolcanicActivity: { per: 4, cap: 12 },
+  continuingVolcanicActivity: { per: 0.5, cap: 8 },
 };
 
-function computePulseScore(counts) {
-  const raw =
-    counts.significantQuakes * PULSE_WEIGHTS.perSignificantQuake +
-    (counts.nmszActive ? PULSE_WEIGHTS.regionActive : 0) +
-    (counts.yellowstoneActive ? PULSE_WEIGHTS.regionActive : 0) +
-    counts.wildfires * PULSE_WEIGHTS.perWildfire +
-    counts.storms * PULSE_WEIGHTS.perStorm +
-    counts.ice * PULSE_WEIGHTS.perIceEvent +
-    counts.volcanoNew * PULSE_WEIGHTS.perNewVolcanicActivity +
-    counts.volcanoContinuing * PULSE_WEIGHTS.perContinuingVolcanicActivity;
+function computePulseScore(counts, incomplete) {
+  const pts = (key, n) => Math.min(PULSE_COMPONENTS[key].cap, n * PULSE_COMPONENTS[key].per);
+  const components = {
+    significantQuakes: pts("significantQuakes", counts.significantQuakes),
+    regionalWatch: pts("regionalWatch", (counts.nmszActive ? 1 : 0) + (counts.yellowstoneActive ? 1 : 0)),
+    wildfires: pts("wildfires", counts.wildfiresRecent),
+    storms: Math.min(
+      PULSE_COMPONENTS.storms.cap,
+      pts("hurricaneStrengthStorms", counts.stormsHurricaneStrength) +
+        pts("storms", counts.storms - counts.stormsHurricaneStrength)
+    ),
+    ice: pts("ice", counts.ice),
+    newVolcanicActivity: pts("newVolcanicActivity", counts.volcanoNew),
+    continuingVolcanicActivity: pts("continuingVolcanicActivity", counts.volcanoContinuing),
+  };
+  const raw = Object.values(components).reduce((a, b) => a + b, 0);
   const score = Math.min(100, Math.max(0, Math.round(raw)));
   const label = score <= 25 ? "Quiet" : score <= 50 ? "Normal" : score <= 75 ? "Active" : "High";
-  return { score, label };
+  return {
+    score,
+    label,
+    components,
+    incomplete: incomplete || [],
+    basis: "Same-day activity from the sources on this page, capped per category. Not compared against a historical baseline.",
+  };
 }
+
+// EONET titles prescribed burns as "Prescribed Fire <NAME> RX, <County>, <State>".
+// These are planned management burns, not hazards.
+const PRESCRIBED_FIRE_RE = /\bprescribed\b|\bRX\b/i;
 
 function countVolcanicActivity(entries) {
   let volcanoNew = 0, volcanoContinuing = 0;
@@ -634,7 +668,13 @@ async function runEarthIngest(env) {
   // EONET_DISPLAY_LIMIT so removing the days window doesn't let an
   // unusually active wildfire/storm day blow up payload size the way
   // BBOX_EVENT_LIMIT already guards against for USGS swarms.
+  // 2026-09-28: prescribed burns are dropped from the wildfire list (see
+  // PRESCRIBED_FIRE_RE), and the Pulse counts are taken from the full parsed
+  // lists before the display cap, not from the capped arrays.
   let wildfires = [], storms = [], ice = [];
+  let excludedPrescribedFires = 0, wildfiresRecent = 0, stormsHurricaneStrength = 0;
+  let stormsTotal = 0, iceTotal = 0;
+  let eonetFailed = false;
   try {
     const res = await fetchWithTimeout(
       "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=" + EONET_FETCH_LIMIT
@@ -642,10 +682,25 @@ async function runEarthIngest(env) {
     if (!res.ok) throw new Error("EONET returned " + res.status);
     const json = await res.json();
     const newestFirst = (a, b) => b.date - a.date;
-    wildfires = parseEonetEvents(json, "wildfires").sort(newestFirst).slice(0, EONET_DISPLAY_LIMIT);
-    storms = parseEonetEvents(json, "severeStorms").sort(newestFirst).slice(0, EONET_DISPLAY_LIMIT);
-    ice = parseEonetEvents(json, "seaLakeIce").sort(newestFirst).slice(0, EONET_DISPLAY_LIMIT);
+    const allFires = parseEonetEvents(json, "wildfires");
+    const realFires = allFires.filter((w) => !PRESCRIBED_FIRE_RE.test(w.title)).sort(newestFirst);
+    excludedPrescribedFires = allFires.length - realFires.length;
+    const recentCutoff = Date.now() - PULSE_WILDFIRE_RECENT_DAYS * 24 * 3600 * 1000;
+    wildfiresRecent = realFires.filter((w) => w.date >= recentCutoff).length;
+    wildfires = realFires.slice(0, EONET_DISPLAY_LIMIT);
+
+    const allStorms = parseEonetEvents(json, "severeStorms").sort(newestFirst);
+    stormsTotal = allStorms.length;
+    stormsHurricaneStrength = allStorms.filter(
+      (s) => s.magnitudeValue !== null && /^kts?$/i.test(s.magnitudeUnit || "") && s.magnitudeValue >= HURRICANE_STRENGTH_KTS
+    ).length;
+    storms = allStorms.slice(0, EONET_DISPLAY_LIMIT);
+
+    const allIce = parseEonetEvents(json, "seaLakeIce").sort(newestFirst);
+    iceTotal = allIce.length;
+    ice = allIce.slice(0, EONET_DISPLAY_LIMIT);
   } catch (err) {
+    eonetFailed = true;
     warnings.push("EONET fetch failed (degrading to empty): " + err.message);
   }
 
@@ -701,17 +756,41 @@ async function runEarthIngest(env) {
 
   // ---- counts + Pulse Score (built only from what we actually ingested) ----
   const { volcanoNew, volcanoContinuing } = countVolcanicActivity(volcanoes.entries);
+  // Key names double as the briefing model's only view of these numbers, so
+  // they say exactly what is counted (e.g. never a bare "wildfires: 30" that
+  // reads as "30 active wildfires").
   const counts = {
     significantQuakes: significantQuakes.length,
     nmszActive: nmszStatus.status === "active",
     yellowstoneActive: yellowstoneStatus.status === "active",
-    wildfires: wildfires.length,
-    storms: storms.length,
-    ice: ice.length,
+    wildfiresUpdatedLast14Days: wildfiresRecent,
+    wildfiresOpenInEonet: wildfires.length === EONET_DISPLAY_LIMIT ? EONET_DISPLAY_LIMIT + "+" : wildfires.length,
+    prescribedBurnsExcluded: excludedPrescribedFires,
+    storms: stormsTotal,
+    stormsHurricaneStrength,
+    ice: iceTotal,
     volcanoNew,
     volcanoContinuing,
   };
-  const pulse = computePulseScore(counts);
+  // Categories whose source failed this run — scored as zero, but flagged so
+  // the page never presents "we couldn't load it" as "it was quiet".
+  const pulseIncomplete = [];
+  if (eonetFailed) pulseIncomplete.push("wildfires", "storms", "ice");
+  if (warnings.some((w) => w.startsWith("USGS significant"))) pulseIncomplete.push("significantQuakes");
+  const pulse = computePulseScore(
+    {
+      significantQuakes: counts.significantQuakes,
+      nmszActive: counts.nmszActive,
+      yellowstoneActive: counts.yellowstoneActive,
+      wildfiresRecent,
+      storms: stormsTotal,
+      stormsHurricaneStrength,
+      ice: iceTotal,
+      volcanoNew,
+      volcanoContinuing,
+    },
+    pulseIncomplete
+  );
 
   // ---- intelligence: daily briefing (always) + why-it-matters (for notable items) ----
   // Unlike the old why-it-matters-only call, the briefing runs every day even
@@ -775,7 +854,7 @@ async function runEarthIngest(env) {
     nmsz: nmszStatus,
     yellowstone: yellowstoneStatus,
     quakes: { significant: significantQuakes, count: significantQuakes.length },
-    surfaceEvents: { wildfires, storms, ice },
+    surfaceEvents: { wildfires, storms, ice, excludedPrescribedFires },
     volcanoes,
     news,
     whyItMatters,

@@ -54,7 +54,7 @@
  *   deploy of this schedule used numeric days and silently landed on the
  *   wrong weekdays as a result (caught 2026-08-22, before it could cause a
  *   repeat of the Aug 10-21 stale-data incident). Always use names here.
- *   0 11 * * *            keepalive (gated internally to >=5 days) + statusSync
+ *   0 11 * * *            keepalive (gated internally to >=5 days)
  *   5 11 * * FRI          stlBucket newsletter ingestion — Friday only
  *   10 11 * * *           spaceIngest — daily
  *   15 11 * * *           earthIngest — daily (must finish before :30 podcast run)
@@ -68,6 +68,9 @@
  *                         runs 5 minutes after the SUN music/sports slot's
  *                         *next-day* read, so Monday's episode always reads
  *                         Sunday's already-refreshed music/sports data)
+ *   55 11 * * *           statusSync (reconcile + alert email) — daily, after
+ *                         every ingest above so it judges TODAY's runs
+ *                         (moved from 11:00 on 2026-09-28)
  *
  * BINDINGS (wrangler.jsonc)
  *   STATUS_KV            KV namespace (heartbeat storage)
@@ -256,7 +259,10 @@ export default {
     // ambiguity entirely, per Cloudflare's own documentation recommendation.
     switch (event.cron) {
       case '0 11 * * *':
-        ctx.waitUntil(runKeepaliveAndSync(env));
+        ctx.waitUntil(runKeepaliveOnly(env));
+        return;
+      case '55 11 * * *':
+        ctx.waitUntil(runStatusSyncOnly(env));
         return;
       case '5 11 * * FRI':
         ctx.waitUntil(runBucketOnly(env));
@@ -288,8 +294,16 @@ export default {
   },
 };
 
-// ── keepalive (gated to >=5 days) + status sync — daily, 11:00 UTC ────────
+// ── keepalive (11:00 UTC) and status sync (11:55 UTC) ─────────────────────
+// SPLIT 2026-09-28: status sync (reconcile + alert email) used to run at
+// 11:00, BEFORE the 11:10 space / 11:15 earth / 11:30 podcast runs — so it
+// always judged yesterday's runs, and a failure took ~48h to email. At 11:55
+// it sees today's. /trigger still runs both via runKeepaliveAndSync().
 async function runKeepaliveAndSync(env) {
+  return { ...(await runKeepaliveOnly(env)), ...(await runStatusSyncOnly(env)) };
+}
+
+async function runKeepaliveOnly(env) {
   const hb = await readHeartbeat(env.STATUS_KV, 'stl-dispatcher:keepalive');
   const { stale } = evaluateHeartbeat(hb, KEEPALIVE_MAX_AGE_HOURS);
   const results = {};
@@ -309,6 +323,11 @@ async function runKeepaliveAndSync(env) {
     results.keepalive = { ran: false, reason: 'not due yet (< 5 days since last success)' };
   }
 
+  return results;
+}
+
+async function runStatusSyncOnly(env) {
+  const results = {};
   try {
     const syncResult = await runStatusSync(env);
     results.statusSync = { ran: true, ok: true, ...syncResult };
@@ -340,20 +359,76 @@ async function runBucketOnly(env) {
   }
 }
 
+// ── Output-quality gates (ADDED 2026-09-28) ───────────────────────────────
+// A heartbeat used to mean only "the task didn't throw". On Sep 28 the space
+// heartbeat read success with launchCount: 0 while the dashboard told readers
+// "Nothing on the pad" — the failure looked exactly like a quiet day. Each
+// ingest now also records quality: 'ok' | 'degraded' with reasons, and
+// reconcile.js's checkHeartbeats raises a warning (→ alert email) on degraded.
+const SPACE_MIN_LIVE_FEEDS = 10;   // of ~13 RSS/SNAPI sources
+const SPACE_MIN_STORIES = 5;       // summarized stories across all buckets
+const ZERO_STREAK_LIMIT = 3;       // consecutive empty runs before a feed is flagged
+const SPACE_NON_FEED_DIAGNOSTICS = new Set(['Launch Library 2', 'ISS Pass API', 'Summarization', 'Daily Briefing']);
+
+async function assessSpaceQuality(env, blob) {
+  const reasons = [];
+  const launches = blob.launches || {};
+  if (!(launches.next7Days || []).length) reasons.push('no launches in the next 7 days (all launch sources failed or empty)');
+  else if (launches.stale) reasons.push(`launches carried forward from ${launches.asOf}`);
+
+  const feeds = (blob.meta.diagnostics || []).filter((d) => !SPACE_NON_FEED_DIAGNOSTICS.has(d.name));
+  const live = feeds.filter((d) => d.count > 0).length;
+  if (live < SPACE_MIN_LIVE_FEEDS) reasons.push(`only ${live}/${feeds.length} news feeds returned items (min ${SPACE_MIN_LIVE_FEEDS})`);
+
+  const stories = blob.breaking.last24h.length + blob.astronomy.length + blob.missions.length + blob.policy.length;
+  if (stories < SPACE_MIN_STORIES) reasons.push(`only ${stories} summarized stories (min ${SPACE_MIN_STORIES})`);
+  if (!blob.briefing) reasons.push('no daily briefing');
+
+  // A feed that "succeeds" with zero items (Space.com's empty channel,
+  // SpaceRef's redirect to HTML — both Sep 28) never shows up in
+  // sourcesErrored. Track consecutive empty runs per feed and flag at 3.
+  try {
+    const raw = await env.STATUS_KV.get('space:zero-streaks');
+    const prev = raw ? JSON.parse(raw) : {};
+    const next = {};
+    for (const d of feeds) next[d.name] = d.count > 0 ? 0 : (prev[d.name] || 0) + 1;
+    await env.STATUS_KV.put('space:zero-streaks', JSON.stringify(next));
+    const dead = Object.entries(next).filter(([, n]) => n >= ZERO_STREAK_LIMIT);
+    if (dead.length) reasons.push(`empty ${ZERO_STREAK_LIMIT}+ runs in a row: ${dead.map(([k, n]) => `${k} (${n})`).join(', ')}`);
+  } catch (e) {
+    console.error('[stl-dispatcher] zero-streak tracking failed:', e);
+  }
+
+  return { quality: reasons.length ? 'degraded' : 'ok', qualityReasons: reasons };
+}
+
+function assessEarthQuality(blob) {
+  const reasons = [];
+  // News feeds are excluded: an empty 24h window there is normal, not a fault.
+  for (const w of blob.meta.warnings || []) {
+    if (/^(USGS|NMSZ|Yellowstone|EONET|GVP)/.test(w)) reasons.push(w);
+  }
+  if (!blob.briefing) reasons.push('no daily briefing');
+  return { quality: reasons.length ? 'degraded' : 'ok', qualityReasons: reasons };
+}
+
 // ── spaceIngest — daily, own cron now ──────────────────────────────────────
 async function runSpaceOnly(env) {
   try {
     if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not bound');
     const blob = await runSpaceIngest(env);
+    const quality = await assessSpaceQuality(env, blob);
     const result = {
       ran: true,
       ok: true,
+      ...quality,
       sourcesPolled: blob.meta.sourcesPolled,
       sourcesErrored: blob.meta.sourcesErrored,
     };
     await recordHeartbeat(env.STATUS_KV, 'stl-dispatcher:space-ingest', {
       breakingCount: blob.breaking.last24h.length,
       launchCount: blob.launches.next7Days.length,
+      ...quality,
     });
     return result;
   } catch (e) {
@@ -368,17 +443,21 @@ async function runEarthOnly(env) {
     if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not bound');
     if (!env.EARTH_KV) throw new Error('EARTH_KV not bound');
     const blob = await runEarthIngest(env);
+    const quality = assessEarthQuality(blob);
     const result = {
       ran: true,
       ok: true,
+      ...quality,
       warnings: blob.meta.warnings,
       significantQuakes: blob.quakes.count,
       nmszStatus: blob.nmsz.status,
+      pulse: blob.pulse,
     };
     await recordHeartbeat(env.STATUS_KV, 'stl-dispatcher:earth-ingest', {
       significantQuakes: blob.quakes.count,
       nmszEventCount: blob.nmsz.eventCount,
       warningCount: blob.meta.warnings.length,
+      ...quality,
     });
     return result;
   } catch (e) {
