@@ -459,10 +459,17 @@ function computePulseScore(counts, incomplete) {
   const raw = Object.values(components).reduce((a, b) => a + b, 0);
   const score = Math.min(100, Math.max(0, Math.round(raw)));
   const label = score <= 25 ? "Quiet" : score <= 50 ? "Normal" : score <= 75 ? "Active" : "High";
+  // {points, max} per component so the page can draw each one against its
+  // own cap. storms' max is the shared storms cap (hurricane-strength
+  // storms draw from the same 24).
+  const withMax = {};
+  for (const [k, v] of Object.entries(components)) {
+    withMax[k] = { points: Math.round(v * 10) / 10, max: PULSE_COMPONENTS[k].cap };
+  }
   return {
     score,
     label,
-    components,
+    components: withMax,
     incomplete: incomplete || [],
     basis: "Same-day activity from the sources on this page, capped per category. Not compared against a historical baseline.",
   };
