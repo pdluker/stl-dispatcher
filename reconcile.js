@@ -291,7 +291,7 @@ export async function reconcile(env, data) {
     // (unlike everything else in this list). If it's ever consolidated,
     // remove this entry and add its task to the stl-dispatcher block above.
     { worker: "rails-beneath-us", expected: "0 11 * * 1,3,5" }, // Mon/Wed/Fri 06:00 CT
-    { worker: "innovation-daily", expected: "0 11 * * 2,4" },   // Tue/Thu 06:00 CT
+    { worker: "innovation-daily", expected: "0 11 * * TUE,THU" }, // was "2,4": same days, but checkCronDrift compares text, so it reported drift every run (fixed 2026-10-04)   // Tue/Thu 06:00 CT
     { worker: "civicsignal", expected: "0 11 * * MON-FRI" },    // weekday mornings, ~06:00 CT
     { worker: "bigbuilds", expected: "0 13 */2 * *" },          // every other day, ~08:00 CT
     // ADDED 2026-09-25: status Worker's own server-side health probes

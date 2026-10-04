@@ -62,7 +62,10 @@ export async function checkTrackersHealth() {
   if (!h.lastRun || h.lastRun.ageHours > INSIGHTS_RUN_MAX_H) {
     findings.push({ type: "heartbeat_stale", severity: "critical", job, lastSuccess: h.lastRun?.at || null, message: `insights has not run for ${h.lastRun ? Math.round(h.lastRun.ageHours) + "h" : "ever"} (expected every 3h).` });
   }
-  if (!h.lastDaily || h.lastDaily.ageHours > INSIGHTS_DAILY_MAX_H) {
+  if (!h.lastDaily && h.lastRun && h.lastRun.ageHours <= INSIGHTS_RUN_MAX_H) {
+    // First day after a deploy: the 3-hourly job is alive but no 12:40 daily run has happened yet. (2026-10-04)
+    findings.push({ type: "heartbeat_missing", severity: "info", job: "insights:daily", message: "insights' daily refresh has not run since the heartbeat was added; expected at the next 12:40 UTC run." });
+  } else if (!h.lastDaily || h.lastDaily.ageHours > INSIGHTS_DAILY_MAX_H) {
     findings.push({ type: "heartbeat_stale", severity: "critical", job: "insights:daily", lastSuccess: h.lastDaily?.at || null, message: `insights' daily refresh (12:40 UTC) last ran ${h.lastDaily ? Math.round(h.lastDaily.ageHours) + "h ago" : "never"}.` });
   } else if (h.lastDaily.failed?.length) {
     findings.push({ type: "heartbeat_degraded", severity: "warning", job: "insights:daily", expected: h.lastDaily.failed.join(","), message: `insights' daily refresh ran but these jobs failed: ${h.lastDaily.failed.join(", ")}.` });
