@@ -17,6 +17,8 @@
 
 const CF_API = "https://api.cloudflare.com/client/v4";
 
+import { checkTrackersHealth, checkInsightsSignals } from "./trackers-checks.js";
+
 async function cf(env, path) {
   const res = await fetch(`${CF_API}${path}`, {
     headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
@@ -302,6 +304,10 @@ export async function reconcile(env, data) {
     // ADDED 2026-09-25: stickers.stluker.com (IT sticker of the day) runs its
     // own native cron, like rails-beneath-us -- not a dispatcher task.
     { worker: "stickers", expected: "50 11 * * *" },
+    // ADDED 2026-10-04: trackers.stluker.com (15-min fan-out + daily thresholds/archive) and insights.stluker.com (3-hourly)
+    { worker: "trackers", expected: "*/15 * * * *" },
+    { worker: "trackers", expected: "20 6 * * *" },
+    { worker: "insights", expected: "40 */3 * * *" },
   ];
   const trackedWorkers = [
     "stluker", "family", "stl-sports", "stl-music", "stl-bucket",
@@ -341,6 +347,8 @@ export async function reconcile(env, data) {
     "innovation-daily", // untracked, purpose/status unconfirmed — verify before treating as permanently expected
     "mech-match",       // untracked, purpose/status unconfirmed — verify before treating as permanently expected
     "bigbuilds",        // untracked, purpose/status unconfirmed — verify before treating as permanently expected
+    "trackers",         // trackers.stluker.com — river/grid/fires live trackers, own crons + D1 trackers-db. ADDED 2026-10-04; freshness via checkTrackersHealth()
+    "insights",         // insights.stluker.com — analyses + Monday brief over trackers-db, own cron. ADDED 2026-10-04
     "stickers",         // stickers.stluker.com — IT sticker of the day, own cron + D1/R2. ADDED 2026-09-25; freshness via checkStickersHealth()
   ];
   const heartbeatJobs = [
@@ -394,6 +402,8 @@ export async function reconcile(env, data) {
     ...(await safe(() => checkWorkerInventory(env, trackedWorkers))),
     ...(await safe(() => checkHeartbeats(env, heartbeatJobs))),
     ...(await safe(() => checkStickersHealth(env))),
+    ...(await safe(() => checkTrackersHealth())),
+    ...(await safe(() => checkInsightsSignals())),
   ];
 
   data.verification = {
@@ -409,7 +419,7 @@ export async function reconcile(env, data) {
       icon: f.severity === "critical" ? "🔴" : "🟠",
       title: f.message,
       detail: `Auto-detected by stl-status-sync reconciliation (${f.type}).`,
-      cat: f.severity === "critical" ? "CRITICAL" : "DRIFT",
+      cat: f.severity === "critical" ? "CRITICAL" : f.signal ? "SIGNAL" : "DRIFT",
     }));
   data.autoRecommendations = auto;
 

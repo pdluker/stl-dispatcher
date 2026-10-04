@@ -1,0 +1,1 @@
+{ "version": "0.0.1", "configurations": [ { "name": "earth-preview", "runtimeExecutable": "node", "runtimeArgs": ["C:/Users/pdluk/AppData/Local/Temp/claude/C--Users-pdluk-stl-dispatcher/3e12b1a5-da9f-4774-ab30-79089e25a4ff/scratchpad/srv.mjs"], "port": 8788 } ] }

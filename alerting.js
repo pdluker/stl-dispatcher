@@ -61,7 +61,9 @@ async function putCooldownState(env, state) {
 
 function renderEmail(newFindings, allFindings) {
   const crit = newFindings.filter((f) => f.severity === 'critical');
-  const warn = newFindings.filter((f) => f.severity === 'warning');
+  // ADDED 2026-10-04: SIGNAL findings (trackers-checks.js) are data events, not pipeline drift.
+  const sig = newFindings.filter((f) => f.severity === 'warning' && f.signal);
+  const warn = newFindings.filter((f) => f.severity === 'warning' && !f.signal);
 
   const line = (f) => `  - [${f.severity.toUpperCase()}] ${f.message}`;
   const body = [
@@ -70,6 +72,9 @@ function renderEmail(newFindings, allFindings) {
     crit.length ? `CRITICAL (${crit.length}) — a pipeline is dead or stale:` : null,
     crit.length ? crit.map(line).join('\n') : null,
     crit.length ? '' : null,
+    sig.length ? `SIGNAL (${sig.length}) — the data crossed a threshold you asked to hear about:` : null,
+    sig.length ? sig.map((f) => `  - ${f.message}`).join('\n') : null,
+    sig.length ? '' : null,
     warn.length ? `WARNING (${warn.length}) — drift between declared and live:` : null,
     warn.length ? warn.map(line).join('\n') : null,
     warn.length ? '' : null,
@@ -84,7 +89,9 @@ function renderEmail(newFindings, allFindings) {
 
   const subject = crit.length
     ? `[stluker] ${crit.length} CRITICAL: ${crit[0].job || crit[0].worker || 'pipeline failure'}`
-    : `[stluker] ${warn.length} warning(s) from reconciliation`;
+    : sig.length && !warn.length
+      ? `[stluker] ${sig[0].message.split('.')[0]}`
+      : `[stluker] ${warn.length + sig.length} warning(s) from reconciliation`;
 
   return { subject, body };
 }
