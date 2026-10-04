@@ -23,6 +23,7 @@ const INSIGHTS_BASE = "https://insights.stluker.com";
 const INSIGHTS_RUN_MAX_H = 7;     // two missed 3-hourly runs + grace
 const INSIGHTS_DAILY_MAX_H = 30;  // one missed daily run + grace
 const GRID_NEAR_RECORD_PCT = 95;
+const OUTLOOK_WARN_PCT = 97; // expected peak tomorrow vs that month's record
 
 async function getJson(url) {
   const res = await fetch(url, {
@@ -99,6 +100,17 @@ export async function checkInsightsSignals() {
         ? `${m.region} set a new monthly demand record: ${(m.peakMw / 1000).toFixed(1)} GW (${m.at || "time n/a"} UTC). ${INSIGHTS_BASE}/#grid`
         : `${m.region} demand reached ${m.pctOfRecord}% of its monthly record (${(m.peakMw / 1000).toFixed(1)} GW at ${m.at || "n/a"} UTC). ${INSIGHTS_BASE}/#grid`,
     });
+  }
+  // ADDED 2026-10-04 (pm): advance warning from insights' next-day peak outlook.
+  for (const [region, o] of Object.entries(s.grid?.outlook || {})) {
+    if (!o || o.pctOfRecord == null) continue;
+    if (o.pctOfRecord >= OUTLOOK_WARN_PCT || (o.pctOfRecord >= 93 && o.highPctOfRecord >= 100)) {
+      findings.push({
+        type: "signal_grid_outlook", severity: "warning", signal: true,
+        job: `insights:outlook-${region}`, expected: o.day,
+        message: `${region} demand for ${o.day} is forecast near its monthly record: about ${(o.expectedMw / 1000).toFixed(1)} GW (${o.pctOfRecord}% of record, upper range ${o.highPctOfRecord}%), forecast high ${Math.round(o.tmaxF)}F. ${INSIGHTS_BASE}/#grid`,
+      });
+    }
   }
   return findings;
 }

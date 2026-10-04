@@ -76,6 +76,7 @@
 const EARTH_DATA_KEY = "earth-data";
 const NMSZ_BBOX = { minlatitude: 35.0, maxlatitude: 38.5, minlongitude: -91.5, maxlongitude: -88.5 };
 const YELLOWSTONE_BBOX = { minlatitude: 44.0, maxlatitude: 45.2, minlongitude: -111.3, maxlongitude: -109.7 };
+import { BROWSER_UA } from "./fetch-source.js";
 const USER_AGENT = "stluker.com earth-ingest/1.0 (contact: pdluker@gmail.com)";
 const GVP_MAX_AGE_MS = 6 * 24 * 3600 * 1000; // re-fetch GVP at most ~weekly
 // Bump this whenever parseGvpRss's output shape changes (new fields, fixed
@@ -128,7 +129,17 @@ async function fetchWithTimeout(url, timeoutMs) {
 // character and smart quote into U+FFFD / mojibake). Decode explicitly
 // rather than trusting res.text()'s default.
 async function fetchGvpRssText(url, timeoutMs) {
-  const res = await fetchWithTimeout(url, timeoutMs);
+  let res = await fetchWithTimeout(url, timeoutMs);
+  // ADDED 2026-10-04: volcano.si.edu started answering this Worker with 403 while
+  // serving the same feed normally to other clients (verified the same day: valid
+  // RSS, 24 items, report for 24-30 Sep). Same pattern fetch-source.js documents
+  // for ESPN/LL2: retry once with the browser-shaped UA before giving up.
+  if (res.status === 403) {
+    res = await fetch(url, {
+      headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8" },
+      signal: AbortSignal.timeout(timeoutMs || 8000),
+    });
+  }
   if (!res.ok) return { ok: false, status: res.status };
   const buf = await res.arrayBuffer();
   const decoder = new TextDecoder("windows-1252");

@@ -83,7 +83,11 @@
 // ---------------------------------------------------------------------------
 
 export const FEEDS = [
-  { name: "Space.com", url: "https://www.space.com/feeds/all", category: "General" },
+  // PAUSED 2026-10-04: Space.com's feeds (/feeds/all -> /feeds.xml, /feeds/news) have served
+  // an empty channel titled "Latest from null" since at least Sep 28 (checked directly on
+  // Oct 4: zero <item> elements, lastBuildDate current). Upstream CMS fault, not ours. It was
+  // raising heartbeat_degraded every morning. Re-enable when /feeds.xml has items again:
+  // { name: "Space.com", url: "https://www.space.com/feeds.xml", category: "General" },
   { name: "SpaceNews", url: "https://spacenews.com/feed/", category: "Industry" },
   { name: "Spaceflight Now", url: "https://spaceflightnow.com/feed/", category: "Launch" },
   { name: "NASA", url: "https://www.nasa.gov/news-release/feed/", category: "Mission" },
