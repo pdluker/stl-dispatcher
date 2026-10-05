@@ -412,6 +412,17 @@ export async function reconcile(env, data) {
     ...(await safe(() => checkInsightsSignals())),
   ];
 
+  // ADDED 2026-10-05: live Worker inventory for the status board's
+  // Dependencies tab, which used to be hand-written HTML that had drifted
+  // to "14 subdomains, 100% cron capacity". On failure the previous
+  // snapshot is kept (the board shows its generatedAt), never blanked.
+  try {
+    data.infrastructure = data.infrastructure || {};
+    data.infrastructure.workers = await collectWorkerInventory(env);
+  } catch (e) {
+    findings.push({ type: "inventory_failed", severity: "info", message: `Worker inventory for the Dependencies tab not refreshed: ${String(e.message || e)}` });
+  }
+
   data.verification = {
     ranAt: new Date().toISOString(),
     findingsCount: findings.length,
@@ -430,6 +441,60 @@ export async function reconcile(env, data) {
   data.autoRecommendations = auto;
 
   return data;
+}
+
+/**
+ * Every Worker in the account with its cron triggers and resource bindings,
+ * normalized for status.stluker.com's Dependencies tab (shared storage,
+ * self-scheduled Workers, cron totals). ADDED 2026-10-05.
+ *
+ * Uses only Workers Scripts:Read / Workers Cron:Read -- the scopes this
+ * token already has. That means no KV/D1 *names* (those need KV/D1 read
+ * scopes): KV and D1 are identified by id, and the board labels them with
+ * the binding names Workers use for them. Secrets and plain-text vars are
+ * dropped entirely -- data.json is served publicly.
+ */
+const BINDING_KIND = {
+  kv_namespace: "kv", r2_bucket: "r2", d1: "d1", ai: "ai", service: "service",
+  durable_object_namespace: "do", queue: "queue", vectorize: "vectorize",
+  analytics_engine: "analytics", browser: "browser", hyperdrive: "hyperdrive",
+  images: "images", assets: "assets",
+};
+
+function bindingResource(b) {
+  switch (b.type) {
+    case "kv_namespace": return b.namespace_id || null;
+    case "r2_bucket": return b.bucket_name || null;
+    case "d1": return b.id || b.database_id || null;
+    case "service": return b.service || null;
+    case "durable_object_namespace": return b.class_name || null;
+    case "queue": return b.queue_name || null;
+    default: return null;
+  }
+}
+
+export async function collectWorkerInventory(env) {
+  const acct = `/accounts/${env.CF_ACCOUNT_ID}/workers/scripts`;
+  const scripts = (await cf(env, acct)) || [];
+  const out = {};
+  // Sequential on purpose: ~35 scripts x 2 calls stays far inside the
+  // subrequest limit and avoids bursting the CF API rate limit.
+  for (const s of scripts) {
+    const name = s.id;
+    const entry = { modifiedOn: s.modified_on || null, crons: [], bindings: [] };
+    try {
+      const sched = await cf(env, `${acct}/${name}/schedules`);
+      entry.crons = (sched?.schedules || []).map((x) => x.cron);
+    } catch (e) { entry.error = `schedules: ${String(e.message || e)}`; }
+    try {
+      const settings = await cf(env, `${acct}/${name}/settings`);
+      entry.bindings = (settings?.bindings || [])
+        .filter((b) => BINDING_KIND[b.type])
+        .map((b) => ({ kind: BINDING_KIND[b.type], binding: b.name, resource: bindingResource(b) }));
+    } catch (e) { entry.error = `${entry.error ? entry.error + "; " : ""}settings: ${String(e.message || e)}`; }
+    out[name] = entry;
+  }
+  return { generatedAt: new Date().toISOString(), source: "cloudflare-api", scripts: out };
 }
 
 async function safe(fn) {
