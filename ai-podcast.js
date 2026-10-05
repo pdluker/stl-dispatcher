@@ -110,7 +110,7 @@ The ident ("I'm Paul Luker, and this is ${SHOW.title} for <date>.") and the clos
    QUICK HITS: three to five smaller items, one or two sentences each, faster rhythm. Introduce the run with a plain half-sentence once ("A few quicker ones."), then go.
    Order by what connects, not by date or category. Mention the day when it helps the listener place it ("On Tuesday, ...").
 
-3. watch (30-60 words). One specific thing to watch before the next episode, grounded in something in the material (a launch said to be coming, a vote, a rollout, an open question a story left hanging). Say why it matters in one line. No predictions beyond what the material says.
+3. watch (30-60 words). Its subject must not also appear in the quick hits; if you want to watch a quick-hit story, drop it from the quick hits. One specific thing to watch before the next episode, grounded in something in the material (a launch said to be coming, a vote, a rollout, an open question a story left hanging). Say why it matters in one line. No predictions beyond what the material says.
 
 VOICE
 Blend three sensibilities, braided, not imitated:
@@ -136,6 +136,7 @@ THE FACT RULES (these are checked by code after you write)
 - Spelled-out quantities and time spans are numbers too: "two years", "a decade", "dozens of", "more than a year" must be in the material or not said.
 - No invented specifics without numbers either: no mechanism the material doesn't give ("a copy paste mistake" when it only says "improperly redacted"), no claims of absence you can't know ("nobody has explained why", "no one noticed"), and no illustrative scenario that implies a fact ("you generate boots, you get a boots ad" implies ads match the image; the material doesn't say that). Your takes are opinions about given facts, never new facts.
 - Hacker News points and comment counts are not news. Don't say them.
+- Who did it stays exactly as vague as the material. "One AI bot cheated" never becomes "one of" two named products; "researchers" never becomes a named lab; "a company" never becomes a guessed company. Takes must not invent a premise either ("the rules said win at any cost" when the material says nothing about the rules).
 - No invented quotes. Never present anyone's words in quotation marks unless the material quotes them.
 - Attribution: name a news outlet at most ${MAX_NAMED_OUTLETS} times in the whole episode, ideally once on the lead ("TechCrunch reported..."). Only outlets listed for that story. Never name the same outlet twice. Companies that are the subject of a story (OpenAI, Google, Anthropic...) are not outlets; name them as often as the story needs.
 - Disasters, layoffs, harm to people: reported plainly. No silver linings, no jokes.
@@ -348,8 +349,9 @@ export function lintScript(parts, sourceText, outlets) {
     if (/\?\s*$/.test(String(v || '').trim())) issues.push(`The ${k} ends on a question. End it on a statement.`);
   }
 
-  // 5. Negation crutch, at most once.
-  const negations = (writer.match(/\b(it's|that's|this is) not [^.]{1,60}\.\s+(it's|that's|this is)\b/gi) || []).length;
+  // 5. Negation crutch, at most once. Catches "It's not X. It's Y." and
+  // "this isn't X, it's Y" (the 2026-10-05 dry run used the latter 3 times).
+  const negations = (writer.match(/\b(it|that|this)(?:'s| is) ?(?:not|n't)\b[^.;]{1,80}[.,;]\s+(?:it|that|this)(?:'s| is)\b/gi) || []).length;
   if (negations > 1) issues.push(`The "It's not X. It's Y." move is used ${negations} times. Keep at most one; state what things are directly.`);
 
   // 6. Length (whole episode is writer pieces + ~45 words of ident/closeout).
@@ -435,6 +437,30 @@ async function writeScript(env, today, editions, prevEpisode, prevCloseoutId, di
       diagnostics.push({ step: 'script-revise', ok: false, error: String(e) });
     }
   }
+  // Fact audit: the things lint can't see -- who did what, dropped hedges,
+  // invented premises (2026-10-05 dry run pinned "one AI bot cheated" on one
+  // of two named models). Same idea as E&O's claims audit. One call, minimal
+  // edits, then re-lint; the audited version is kept unless it made lint worse.
+  try {
+    const audit = await callClaude(env, {
+      system: 'You are a fact checker for a spoken news script. You compare every factual claim in the script to the source material and fix only what the material does not support. You never touch opinions that are clearly framed as opinions about given facts, style, structure, or anything that is supported.',
+      user: `SOURCE MATERIAL:\n${digest}\n\nSCRIPT (JSON):\n${JSON.stringify({ coldOpen: parts.coldOpen, body: parts.body, watch: parts.watch })}\n\nFind every place where the script:\n- states a fact, number, name, mechanism, or premise not in the material\n- assigns an action to a more specific party than the material does (e.g. "one of [named products]" when the material says "one bot")\n- drops a hedge the material has (reportedly, apparently, appears, may, plans to, initially, testing)\n- upgrades a stage (test -> launch, plans -> did)\n- presents an inference as fact without "I think" style framing\n\nFix each with the smallest possible edit: restore the hedge, loosen the attribution, or cut the clause. Keep length, voice, and everything supported exactly as is.\n\nReturn ONLY JSON: {"changes":[{"before":"...","after":"...","why":"..."}],"coldOpen":"...","body":"...","watch":"..."}. If nothing needs fixing, return an empty changes array and the pieces unchanged.`,
+    });
+    const audited = parseJsonLoose(audit.text);
+    const changes = Array.isArray(audited.changes) ? audited.changes : [];
+    if (changes.length && audited.body) {
+      const next = { ...parts, coldOpen: audited.coldOpen || parts.coldOpen, body: audited.body, watch: audited.watch || parts.watch };
+      const relint = lintScript(next, sourceText, outlets);
+      const kept = relint.issues.length <= lint.issues.length;
+      if (kept) { parts = next; lint = relint; }
+      diagnostics.push({ step: 'fact-audit', ok: true, kept, changes, issuesAfter: relint.issues, usage: audit.usage });
+    } else {
+      diagnostics.push({ step: 'fact-audit', ok: true, changes: [], usage: audit.usage });
+    }
+  } catch (e) {
+    diagnostics.push({ step: 'fact-audit', ok: false, error: String(e) });
+  }
+
   if (wordCount(parts.body) < 200) throw new Error(`script unusable (body ${wordCount(parts.body)} words)`);
 
   const closeout = pickCloseout(today, prevCloseoutId);
