@@ -1559,7 +1559,36 @@ const IMAGE_MODEL_IDS = {
 // cover). Lucid is kept as a second attempt anyway, purely for resilience
 // -- a stylistically-imperfect cover still beats no cover on a bad day.
 const IMAGE_MODEL_CHAIN = ["flux2", "lucid", "schnell"];
-const COVER_SIZE = [1024, 1024];
+// CHANGED 2026-10-05: was 1024x1024. pod-worker.js now uses the latest
+// episode's cover as the CHANNEL artwork, and Apple Podcasts rejects channel
+// art under 1400x1400. 1440 rather than 1400 because FLUX works in 16-px
+// multiples (1400 could round down to 1392). Applies to flux-2-dev and
+// lucid-origin (max 2500); flux-1-schnell takes no size and always returns
+// 1024 -- pod-worker checks imageWidth/imageHeight and falls back to the
+// static channel cover on those days. Roughly 2x the per-image cost of 1024.
+const COVER_SIZE = [1440, 1440];
+
+// Pixel size from the image header, so the feed can tell whether a cover is
+// big enough to be channel artwork. null if the header can't be read.
+function imageDimensions(bytes, ext) {
+  if (ext === "png" && bytes.length >= 24) {
+    const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return { width: v.getUint32(16), height: v.getUint32(20) };
+  }
+  if (ext === "jpg") {
+    let i = 2;
+    while (i + 9 < bytes.length) {
+      if (bytes[i] !== 0xff) { i++; continue; }
+      const m = bytes[i + 1];
+      // SOF0-SOF15 carry the frame size; C4/C8/CC are other markers in that range.
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+        return { height: (bytes[i + 5] << 8) | bytes[i + 6], width: (bytes[i + 7] << 8) | bytes[i + 8] };
+      }
+      i += 2 + ((bytes[i + 2] << 8) | bytes[i + 3]);
+    }
+  }
+  return null;
+}
 
 function imageModelChain(env) {
   const ids = {
@@ -1628,7 +1657,7 @@ function sniffImageType(bytes) {
 // the whole episode until the Worker's wall-clock limit. On timeout the
 // underlying AI.run is abandoned, not cancelled -- the binding takes no
 // abort signal -- but the chain moves on to the next model.
-const IMAGE_ATTEMPT_TIMEOUT_MS = 90_000;
+const IMAGE_ATTEMPT_TIMEOUT_MS = 120_000; // was 90s at 1024px; ~2x the pixels at 1440
 
 function withTimeout(promise, ms, label) {
   let timer;
@@ -1663,7 +1692,8 @@ async function runImageModel(env, model, prompt) {
   }
   const bytes = await imageResultToBytes(out);
   if (bytes.byteLength < 500) throw new Error(`${model} returned only ${bytes.byteLength} bytes -- treating as failure`);
-  return { bytes, ...sniffImageType(bytes) };
+  const type = sniffImageType(bytes);
+  return { bytes, ...type, dims: imageDimensions(bytes, type.ext) };
 }
 
 async function generateCoverImage(env, imagePrompt, diagnostics) {
@@ -1683,7 +1713,7 @@ async function generateCoverImage(env, imagePrompt, diagnostics) {
       // and content-type from the sniffed format, not a hardcoded .jpg.
       const image = await withTimeout(runImageModel(env, model, imagePrompt), IMAGE_ATTEMPT_TIMEOUT_MS, model);
       diagnostics.push({
-        step: "image", ok: true, bytes: image.bytes.byteLength, format: image.ext, model,
+        step: "image", ok: true, bytes: image.bytes.byteLength, format: image.ext, dims: image.dims, model,
         attemptedModels: chain,
         priorFailures: errors.length ? errors.slice() : undefined
       });
@@ -2046,6 +2076,10 @@ export async function runPodcastIngest(env, opts = {}) {
       pubDate: new Date().toUTCString(),
       audioKey: objectKey,
       imageKey,
+      // ADDED 2026-10-05: pod-worker only uses a cover as channel artwork
+      // when it's >= 1400px (Apple minimum); see COVER_SIZE.
+      imageWidth: image?.dims?.width ?? null,
+      imageHeight: image?.dims?.height ?? null,
       imageError: imageErrorReason,
       imagePrompt: gen.imagePrompt || null,
       bytes: audio.byteLength,
@@ -2088,7 +2122,8 @@ export async function runPodcastIngest(env, opts = {}) {
     manifest = manifest.filter((e) => e.id !== day);
     manifest.unshift({
       id: episode.id, episodeNumber: episode.episodeNumber, title: episode.title, pubDate: episode.pubDate,
-      audioKey: episode.audioKey, imageKey: episode.imageKey, bytes: episode.bytes, durationSeconds: episode.durationSeconds,
+      audioKey: episode.audioKey, imageKey: episode.imageKey, imageWidth: episode.imageWidth, imageHeight: episode.imageHeight,
+      bytes: episode.bytes, durationSeconds: episode.durationSeconds,
       blurb: script.split(/(?<=\.)\s+/).slice(0, 2).join(" ").slice(0, 400)
     });
     manifest = manifest.slice(0, 60);
