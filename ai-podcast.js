@@ -53,7 +53,13 @@
 // deliberately NO fallback to ELEVENLABS_VOICE_ID -- an episode billed as
 // "in my voice" going out in the stock narrator's voice is worse than none.
 
-import { callClaude, utcDayKey } from './ai-ingest.js';
+import { callClaude, utcDayKey, AI_FEEDS } from './ai-ingest.js';
+
+// Company blogs (OpenAI, Google DeepMind, ...) appear as link "sources" but
+// are the SUBJECT of stories, not outlets. Counting them as outlets made the
+// 2026-10-05 dry run's revise pass rewrite "OpenAI" into "ChatGPT" to dodge
+// the cap -- a fact change. Only real news outlets count toward the cap.
+const FIRST_PARTY_SOURCES = new Set(AI_FEEDS.filter((f) => f.firstParty).map((f) => f.name));
 
 const TTS_MODEL = 'eleven_flash_v2_5';
 const CREDITS_PER_CHAR = 0.5;
@@ -127,8 +133,11 @@ THE FACT RULES (these are checked by code after you write)
 - Use ONLY facts in the material. Never add a number, name, date, benchmark, price, quote, product, or claim that is not there, even if you are confident it is true. If the material is thin on a story, say less.
 - Every number must appear in the material exactly as given. Write numbers as DIGITS exactly as the material has them ("$40 billion", "GPT-5.5", "3x", "70%"). Code spells them out for the voice later. Never round, convert, or compute a new number. If you want scale and lack the figure, say it in words ("a lot more", "most of them").
 - Hedges are facts: "about", "nearly", "up to", "may", "plans to", "reportedly" stay in. "May" never becomes "will"; a test is not a launch; a preview is not general availability. Don't upgrade the stage.
+- Spelled-out quantities and time spans are numbers too: "two years", "a decade", "dozens of", "more than a year" must be in the material or not said.
+- No invented specifics without numbers either: no mechanism the material doesn't give ("a copy paste mistake" when it only says "improperly redacted"), no claims of absence you can't know ("nobody has explained why", "no one noticed"), and no illustrative scenario that implies a fact ("you generate boots, you get a boots ad" implies ads match the image; the material doesn't say that). Your takes are opinions about given facts, never new facts.
+- Hacker News points and comment counts are not news. Don't say them.
 - No invented quotes. Never present anyone's words in quotation marks unless the material quotes them.
-- Attribution: name an outlet at most ${MAX_NAMED_OUTLETS} times in the whole episode, ideally once on the lead ("TechCrunch reported..."). Only outlets listed for that story. Never name the same outlet twice.
+- Attribution: name a news outlet at most ${MAX_NAMED_OUTLETS} times in the whole episode, ideally once on the lead ("TechCrunch reported..."). Only outlets listed for that story. Never name the same outlet twice. Companies that are the subject of a story (OpenAI, Google, Anthropic...) are not outlets; name them as often as the story needs.
 - Disasters, layoffs, harm to people: reported plainly. No silver linings, no jokes.
 
 WRITE FOR THE EAR
@@ -316,6 +325,13 @@ export function lintScript(parts, sourceText, outlets) {
   const bad = [...new Set(numberValues(writer).filter((n) => !allowed.has(n)))];
   if (bad.length) issues.push(`Numbers not found anywhere in the material: ${bad.join(', ')}. Remove them or use the exact figure the material gives.`);
 
+  // 1b. Spelled-out quantities/time spans ("two years", "more than a year")
+  // slip past the digit check; require the exact phrase in the material.
+  const srcLower = String(sourceText).toLowerCase();
+  const spans = [...new Set((lower.match(/\b(a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|fifty|a hundred|several|a few|a couple of|dozens of) (years?|months?|weeks?|decades?)\b/g) || []))]
+    .filter((p) => !srcLower.includes(p));
+  if (spans.length) issues.push(`Time spans not in the material: ${spans.map((s) => `"${s}"`).join(', ')}. Remove them or use only what the material says.`);
+
   // 2. Banned phrases.
   const hits = BANNED.filter((p) => new RegExp(`(^|[^a-z])${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`).test(lower));
   if (hits.length) issues.push(`Banned phrases used: ${hits.map((h) => `"${h}"`).join(', ')}. Rewrite those sentences without them.`);
@@ -389,7 +405,8 @@ function pickCloseout(today, prevId) {
 
 async function writeScript(env, today, editions, prevEpisode, prevCloseoutId, diagnostics) {
   const digest = buildDigest(editions);
-  const outlets = [...new Set(editions.flatMap((e) => e.stories.flatMap((s) => (s.links || []).map((l) => l.source)).filter(Boolean)))];
+  const outlets = [...new Set(editions.flatMap((e) => e.stories.flatMap((s) => (s.links || []).map((l) => l.source)).filter(Boolean)))]
+    .filter((o) => !FIRST_PARTY_SOURCES.has(o));
   const prevBlock = prevEpisode?.script
     ? `PREVIOUS EPISODE (${spokenDate(prevEpisode.id)}), for callbacks only, never a source of facts:\n${prevEpisode.script}`
     : 'PREVIOUS EPISODE: none. This is the first episode, so no callbacks.';
@@ -407,7 +424,7 @@ async function writeScript(env, today, editions, prevEpisode, prevCloseoutId, di
     try {
       const fix = await callClaude(env, {
         system: SYSTEM_PROMPT,
-        user: `${user}\n\nYOUR DRAFT:\n${JSON.stringify(parts)}\n\nAn automated check found these problems:\n- ${lint.issues.join('\n- ')}\n\nFix exactly these problems and nothing else. Keep everything that works: the structure, the organizing idea, the takes, the voice. Return the same JSON shape.`,
+        user: `${user}\n\nYOUR DRAFT:\n${JSON.stringify(parts)}\n\nAn automated check found these problems:\n- ${lint.issues.join('\n- ')}\n\nFix exactly these problems and nothing else. Never change a fact, a name, or who did what to satisfy a check; if a fix would require that, cut the sentence instead. Keep everything that works: the structure, the organizing idea, the takes, the voice. Return the same JSON shape.`,
       });
       const revised = parseJsonLoose(fix.text);
       const relint = lintScript(revised, sourceText, outlets);

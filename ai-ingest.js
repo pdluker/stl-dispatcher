@@ -213,6 +213,8 @@ Skip: listicles, how-to tutorials, opinion pieces with no news, minor feature tw
 Hard rules:
 - Use ONLY facts present in the candidate titles and summaries. Never add a number, name, date, benchmark, price, or claim that is not in them. If a summary is thin, write a shorter, vaguer summary rather than filling gaps from memory.
 - Every story must cite at least one candidate id from the list in "sources". Do not invent ids.
+- The headline must not claim more than the summary supports. Keep the stage exact: "will test" is not "rolls out", "plans to" is not "launches", a preview is not general availability.
+- Hacker News points and comment counts are a ranking signal for you, not news. Never put them in a headline, summary, or why-it-matters line. Report what the linked story says.
 - Plain, specific language. No hype words (revolutionary, game-changing, groundbreaking, insane). No "In a move that...".
 - "category" must be one of: ${CATEGORIES.join(', ')}.
 
