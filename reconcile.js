@@ -284,6 +284,8 @@ export async function reconcile(env, data) {
     // automated path itself has been confirmed working end-to-end via a
     // real /trigger?includeWeekly=true call (episodeId 2026-09-08).
     { worker: "stl-dispatcher", expected: "40 11 * * MON" },         // stl-weekly refresh
+    { worker: "stl-dispatcher", expected: "45 11 * * *" },           // aiIngest (ai.stluker.com) -- ADDED 2026-10-04
+    { worker: "stl-dispatcher", expected: "50 11 * * MON,THU" },     // aiPodcast (AI Daily Recap) -- ADDED 2026-10-04
     // stl-sports intentionally omitted until its expression is confirmed (T-10)
     //
     // ADDED 2026-09-01: rails-beneath-us runs its OWN native cron, confirmed
@@ -349,6 +351,7 @@ export async function reconcile(env, data) {
     "bigbuilds",        // untracked, purpose/status unconfirmed — verify before treating as permanently expected
     "trackers",         // trackers.stluker.com — river/grid/fires live trackers, own crons + D1 trackers-db. ADDED 2026-10-04; freshness via checkTrackersHealth()
     "insights",         // insights.stluker.com — analyses + Monday brief over trackers-db, own cron. ADDED 2026-10-04
+    "ai-daily",         // ai.stluker.com — daily AI edition + Mon/Thu AI Daily Recap podcast, fed by stl-dispatcher aiIngest/aiPodcast. ADDED 2026-10-04
     "stickers",         // stickers.stluker.com — IT sticker of the day, own cron + D1/R2. ADDED 2026-09-25; freshness via checkStickersHealth()
   ];
   const heartbeatJobs = [
@@ -395,6 +398,9 @@ export async function reconcile(env, data) {
     // successes is 168h; 8 days matches the grace window already used for
     // every other weekly job in this list (stl-bucket, stl-music, stl-sports).
     { job: "stl-weekly:refresh", maxAgeHours: 24 * 8 },
+    // ADDED 2026-10-04 together with the tasks themselves, not after the first outage.
+    { job: "stl-dispatcher:ai-ingest", maxAgeHours: 20 },      // daily 11:45
+    { job: "stl-dispatcher:ai-podcast", maxAgeHours: 24 * 5 }, // Mon/Thu; Thu->Mon is 96h + grace
   ];
 
   const findings = [

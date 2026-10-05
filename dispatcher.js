@@ -68,6 +68,11 @@
  *                         runs 5 minutes after the SUN music/sports slot's
  *                         *next-day* read, so Monday's episode always reads
  *                         Sunday's already-refreshed music/sports data)
+ *   45 11 * * *           aiIngest — daily AI edition for ai.stluker.com
+ *                         (added 2026-10-04, ai-ingest.js)
+ *   50 11 * * MON,THU     aiPodcast — "AI Daily Recap" in Paul's cloned
+ *                         voice, covering editions since the last episode
+ *                         (added 2026-10-04, ai-podcast.js)
  *   55 11 * * *           statusSync (reconcile + alert email) — daily, after
  *                         every ingest above so it judges TODAY's runs
  *                         (moved from 11:00 on 2026-09-28)
@@ -100,6 +105,8 @@
  *                           Must match schools' own SCHOOLS_SECRET.
  *   ELEVENLABS_API_KEY       secret
  *   ELEVENLABS_VOICE_ID      secret
+ *   ELEVENLABS_AI_VOICE_ID   secret — Paul's own voice clone, used ONLY by
+ *                            aiPodcast. No fallback to ELEVENLABS_VOICE_ID.
  *   MUSIC_SECRET             secret — Bearer token for stl-music's /api/pulse
  *   SPORTS_SECRET            secret — Bearer token for stl-sports' /api/pulse
  *   WEEKLY_SECRET            secret — Bearer token for stl-weekly's /refresh.
@@ -136,6 +143,8 @@ import { fetchDataJson, commitDataJson } from './github.js';
 import { runSpaceIngest } from './space-ingest.js';
 import { runEarthIngest } from './earthIngest.js';
 import { runPodcastIngest } from './podcast-ingest.js';
+import { runAiIngest } from './ai-ingest.js';
+import { runAiPodcast } from './ai-podcast.js';
 
 const KEEPALIVE_MAX_AGE_HOURS = 24 * 5; // 5 days
 
@@ -149,7 +158,7 @@ export default {
         return jsonResponse({ ok: true });
       }
 
-      const [keepaliveHb, syncHb, stlBucketHb, spaceHb, earthHb, intelHb, podcastHb, schoolsHb, musicHb, sportsHb, weeklyHb] = await Promise.all([
+      const [keepaliveHb, syncHb, stlBucketHb, spaceHb, earthHb, intelHb, podcastHb, schoolsHb, musicHb, sportsHb, weeklyHb, aiHb, aiPodHb] = await Promise.all([
         readHeartbeat(env.STATUS_KV, 'stl-dispatcher:keepalive'),
         readHeartbeat(env.STATUS_KV, 'stl-dispatcher:status-sync'),
         readHeartbeat(env.STATUS_KV, 'stl-bucket:refresh'),
@@ -161,6 +170,8 @@ export default {
         readHeartbeat(env.STATUS_KV, 'stl-music:pulse'),
         readHeartbeat(env.STATUS_KV, 'stl-sports:pulse'),
         readHeartbeat(env.STATUS_KV, 'stl-weekly:refresh'),
+        readHeartbeat(env.STATUS_KV, 'stl-dispatcher:ai-ingest'),
+        readHeartbeat(env.STATUS_KV, 'stl-dispatcher:ai-podcast'),
       ]);
 
       let podcastLastError = null;
@@ -183,6 +194,8 @@ export default {
         musicRefresh: evaluateHeartbeat(musicHb, 24 * 8),
         sportsRefresh: evaluateHeartbeat(sportsHb, 24 * 8),
         weeklyRefresh: evaluateHeartbeat(weeklyHb, 24 * 8), // 8-day tolerance = one missed week before flagging stale
+        aiIngest: evaluateHeartbeat(aiHb, 30),
+        aiPodcast: evaluateHeartbeat(aiPodHb, 24 * 5), // Mon/Thu; longest gap Thu->Mon (96h) + grace
       });
     }
 
@@ -199,6 +212,13 @@ export default {
       const includeMusicSports = url.searchParams.get('includeMusicSports') === 'true';
       const includeWeekly = url.searchParams.get('includeWeekly') === 'true';
       const forcePodcastEpisode = url.searchParams.get('forcePodcast') === 'true';
+      const includeAi = url.searchParams.get('includeAi') === 'true';
+      const includeAiPod = url.searchParams.get('includeAiPod') === 'true';
+      const forceAi = url.searchParams.get('forceAi') === 'true';
+      const forceAiPod = url.searchParams.get('forceAiPod') === 'true';
+      // aiPodDryRun=true writes the script and returns it WITHOUT spending
+      // ElevenLabs credits or touching R2/KV -- use it to read-check copy.
+      const aiPodDryRun = url.searchParams.get('aiPodDryRun') === 'true';
 
       // Each task is independent now — no shared runAll(), no day gate.
       // Only the tasks explicitly opted in via includeX=true actually run.
@@ -232,10 +252,18 @@ export default {
         ? await runWeeklyOnly(env)
         : { ran: false, reason: 'not requested (includeWeekly=false)' };
 
+      // aiIngest before aiPodcast so a combined trigger narrates today's edition.
+      results.aiIngest = includeAi
+        ? await runAiOnly(env, { force: forceAi })
+        : { ran: false, reason: 'not requested (includeAi=false)' };
+      results.aiPodcast = includeAiPod
+        ? await runAiPodOnly(env, { force: forceAiPod, dryRun: aiPodDryRun })
+        : { ran: false, reason: 'not requested (includeAiPod=false)' };
+
       return jsonResponse({
         ok: true,
         forced: true,
-        includeBucket, includeSpace, includeEarth, includeIntel, includePodcast, includeSchools, includeMusicSports, includeWeekly,
+        includeBucket, includeSpace, includeEarth, includeIntel, includePodcast, includeSchools, includeMusicSports, includeWeekly, includeAi, includeAiPod,
         results,
       });
     }
@@ -287,6 +315,12 @@ export default {
         return;
       case '40 11 * * MON':
         ctx.waitUntil(runWeeklyOnly(env));
+        return;
+      case '45 11 * * *':
+        ctx.waitUntil(runAiOnly(env, { force: false }));
+        return;
+      case '50 11 * * MON,THU':
+        ctx.waitUntil(runAiPodOnly(env, { force: false }));
         return;
       default:
         console.error(`[stl-dispatcher] scheduled() fired with unrecognized cron expression: ${event.cron}`);
@@ -563,6 +597,64 @@ async function runPodcastOnly(env, { force = false } = {}) {
         source: 'podcast-cron-exception',
       }));
     } catch { /* logging the error must never itself throw */ }
+    return { ran: true, ok: false, error: String(e) };
+  }
+}
+
+// ── AI edition (ai.stluker.com) — daily, own cron. ADDED 2026-10-04 ───────
+// Same error contract as runPodcastOnly(): heartbeat on success, last-error
+// blob in STATUS_KV on failure, never throws out of scheduled().
+async function recordTaskError(env, key, payload) {
+  try {
+    await env.STATUS_KV.put(key, JSON.stringify({ ...payload, timestamp: new Date().toISOString() }));
+  } catch { /* logging the error must never itself throw */ }
+}
+
+async function runAiOnly(env, { force = false } = {}) {
+  try {
+    if (!env.ANTHROPIC_API_KEY) throw new Error('missing secret: ANTHROPIC_API_KEY');
+    if (!env.PODCAST_KV) throw new Error('PODCAST_KV not bound');
+    const result = await runAiIngest(env, { force });
+    if (result.ok) {
+      await recordHeartbeat(env.STATUS_KV, 'stl-dispatcher:ai-ingest', {
+        day: result.day, skipped: result.skipped || null, stories: result.stories || null, candidates: result.candidates || null,
+      });
+      try { await env.STATUS_KV.delete('ai:last-error'); } catch { /* non-fatal */ }
+    } else {
+      console.error('[stl-dispatcher] ai ingest returned ok:false:', result.error);
+      await recordTaskError(env, 'ai:last-error', { error: result.error, diagnostics: result.diagnostics || null, day: result.day, source: 'ai-ok-false' });
+    }
+    return result;
+  } catch (e) {
+    console.error('[stl-dispatcher] ai ingest failed:', e);
+    await recordTaskError(env, 'ai:last-error', { error: String(e), stack: e?.stack || null, source: 'ai-exception' });
+    return { ran: true, ok: false, error: String(e) };
+  }
+}
+
+// ── AI Daily Recap podcast — Mon/Thu, own cron. ADDED 2026-10-04 ───────────
+async function runAiPodOnly(env, { force = false, dryRun = false } = {}) {
+  try {
+    const needed = dryRun ? ['ANTHROPIC_API_KEY'] : ['ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_AI_VOICE_ID'];
+    for (const k of needed) {
+      if (!env[k]) throw new Error(`missing secret: ${k}`);
+    }
+    if (!env.PODCAST_KV) throw new Error('PODCAST_KV not bound');
+    if (!env.POD_BUCKET) throw new Error('POD_BUCKET not bound');
+    const result = await runAiPodcast(env, { force, dryRun });
+    if (dryRun) return result; // no heartbeat: nothing was published
+    if (result.ok) {
+      await recordHeartbeat(env.STATUS_KV, 'stl-dispatcher:ai-podcast', {
+        day: result.day, skipped: result.skipped || null, episodeId: result.episode?.id || null, credits: result.episode?.credits || null,
+      });
+      try { await env.STATUS_KV.delete('aipod:last-error'); } catch { /* non-fatal */ }
+    } else {
+      await recordTaskError(env, 'aipod:last-error', { error: result.error, diagnostics: result.diagnostics || null, day: result.day, source: 'aipod-ok-false' });
+    }
+    return result;
+  } catch (e) {
+    console.error('[stl-dispatcher] ai podcast failed:', e);
+    await recordTaskError(env, 'aipod:last-error', { error: String(e), stack: e?.stack || null, wasForced: force, source: 'aipod-exception' });
     return { ran: true, ok: false, error: String(e) };
   }
 }
