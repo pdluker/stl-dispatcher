@@ -66,6 +66,7 @@ const CREDITS_PER_CHAR = 0.5;
 const VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.8, speed: 1 };
 const TARGET_WORDS = 720; // ~5:00 at a natural ~145 wpm, ident + closeout included
 const MIN_WORDS = 600;
+const SHORT_FLOOR = 500; // lint only flags below this; see lintScript() note
 const MAX_WORDS = 840;
 const MAX_EDITIONS = 5;
 const MANIFEST_CAP = 300;
@@ -150,7 +151,7 @@ WRITE FOR THE EAR
 
 BANNED (checked by code): "meanwhile", "in other news", "speaking of", "let's dive in", "dive into", "buckle up", "game-changer", "game changing", "revolutionary", "groundbreaking", "it remains to be seen", "time will tell", "at the end of the day", "here's the deal", "the AI landscape", "rapidly evolving", "ever-evolving", "folks", "stay tuned", "without further ado". No rhetorical question as the last line of any beat. The "It's not X. It's Y." construction at most once.
 
-LENGTH: the whole episode (your pieces plus about 45 words of ident and closeout) lands near ${TARGET_WORDS} words, never under ${MIN_WORDS} or over ${MAX_WORDS}. Length comes from depth on the lead, never from padding or restating.
+LENGTH: the whole episode (your pieces plus about 45 words of ident and closeout) lands near ${TARGET_WORDS} words, never over ${MAX_WORDS}. Length comes from depth on the lead using what the material actually says, never from padding, restating, or speculation. If the material is thin, run short: a tight four minutes beats five minutes with guesses in it.
 
 TITLE: max 70 characters, front-load the concrete subject people would search for, specific not clickbait ("OpenAI puts ads in ChatGPT, Google's bug bounty buckles"). No "Episode", no date, no show name.
 BLURB: 1-2 plain sentences for show notes naming the main stories.
@@ -355,8 +356,13 @@ export function lintScript(parts, sourceText, outlets) {
   if (negations > 1) issues.push(`The "It's not X. It's Y." move is used ${negations} times. Keep at most one; state what things are directly.`);
 
   // 6. Length (whole episode is writer pieces + ~45 words of ident/closeout).
+  // CHANGED 2026-10-05: only flag short scripts below SHORT_FLOOR. A 589-word
+  // draft got flagged, and the expand pass padded it with unsupported
+  // speculation ("an ad inside the output, not next to it" -- contradicting
+  // the source). FIRE-INTEL's rule: never pad to hit the target. A quiet
+  // stretch can run ~4 minutes.
   const words = wordCount(writer) + 45;
-  if (words < MIN_WORDS) issues.push(`Too short: about ${words} words with ident and closeout. Target ${TARGET_WORDS}. Add depth to the lead story from the material, not new facts.`);
+  if (words < SHORT_FLOOR) issues.push(`Too short: about ${words} words with ident and closeout. Target ${TARGET_WORDS}. Add depth to the lead story from the material, not new facts.`);
   if (words > MAX_WORDS) issues.push(`Too long: about ${words} words with ident and closeout. Target ${TARGET_WORDS}. Cut repetition and the weakest quick hit, not facts in the lead.`);
 
   // 7. Shape.
@@ -444,7 +450,7 @@ async function writeScript(env, today, editions, prevEpisode, prevCloseoutId, di
   try {
     const audit = await callClaude(env, {
       system: 'You are a fact checker for a spoken news script. You compare every factual claim in the script to the source material and fix only what the material does not support. You never touch opinions that are clearly framed as opinions about given facts, style, structure, or anything that is supported.',
-      user: `SOURCE MATERIAL:\n${digest}\n\nSCRIPT (JSON):\n${JSON.stringify({ coldOpen: parts.coldOpen, body: parts.body, watch: parts.watch })}\n\nFind every place where the script:\n- states a fact, number, name, mechanism, or premise not in the material\n- assigns an action to a more specific party than the material does (e.g. "one of [named products]" when the material says "one bot")\n- drops a hedge the material has (reportedly, apparently, appears, may, plans to, initially, testing)\n- upgrades a stage (test -> launch, plans -> did)\n- presents an inference as fact without "I think" style framing\n\nFix each with the smallest possible edit: restore the hedge, loosen the attribution, or cut the clause. Keep length, voice, and everything supported exactly as is.\n\nReturn ONLY JSON: {"changes":[{"before":"...","after":"...","why":"..."}],"coldOpen":"...","body":"...","watch":"..."}. If nothing needs fixing, return an empty changes array and the pieces unchanged.`,
+      user: `SOURCE MATERIAL:\n${digest}\n\nSCRIPT (JSON):\n${JSON.stringify({ coldOpen: parts.coldOpen, body: parts.body, watch: parts.watch })}\n\nFind every place where the script:\n- states a fact, number, name, mechanism, or premise not in the material\n- assigns an action to a more specific party than the material does (e.g. "one of [named products]" when the material says "one bot")\n- drops a hedge the material has (reportedly, apparently, appears, may, plans to, initially, testing)\n- upgrades a stage (test -> launch, plans -> did)\n- presents an inference as fact without "I think" style framing\n- contradicts the material or itself about how something works (e.g. says an ad appears "next to" an image, then "inside the output, not next to it")\n- states a general claim about users, markets, popularity, or history as fact ("one of the stickiest things people do", "used to need a person") that the material does not give; cut it or reframe it as an explicit opinion\n\nFix each with the smallest possible edit: restore the hedge, loosen the attribution, or cut the clause. Keep length, voice, and everything supported exactly as is.\n\nReturn ONLY JSON: {"changes":[{"before":"...","after":"...","why":"..."}],"coldOpen":"...","body":"...","watch":"..."}. If nothing needs fixing, return an empty changes array and the pieces unchanged.`,
     });
     const audited = parseJsonLoose(audit.text);
     const changes = Array.isArray(audited.changes) ? audited.changes : [];
