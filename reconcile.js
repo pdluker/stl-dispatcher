@@ -162,6 +162,46 @@ export async function checkHeartbeats(env, jobs) {
 }
 
 /**
+ * The pdluker/space GitHub Action ("Fetch launch schedule to KV", every 6h)
+ * writes SPACE_KV["ll2-launches"]; spaceIngest reads it before trying LL2
+ * itself. ADDED 2026-10-06 after Oct 4-6: the Action's CF_API_TOKEN stopped
+ * authenticating (HTTP 401 / code 10000), every run failed for two days, and
+ * the board stayed green -- spaceIngest silently fell back to its own LL2
+ * call / carried-forward data, so its heartbeat still read success. The only
+ * signal was GitHub failure emails. This reads the key's own fetchedAt.
+ *
+ * 14h = two missed 6-hourly runs plus slack for GitHub's schedule delays
+ * (observed gaps between runs up to ~9h).
+ */
+const LAUNCH_FEED_KEY = "ll2-launches";
+const LAUNCH_FEED_MAX_H = 14;
+
+async function checkLaunchFeed(env, now = Date.now()) {
+  const job = "space:ll2-launches-action";
+  if (!env.SPACE_KV) return [];
+  const raw = await env.SPACE_KV.get(LAUNCH_FEED_KEY);
+  if (!raw) {
+    return [{ type: "heartbeat_missing", severity: "warning", job, message: `SPACE_KV["${LAUNCH_FEED_KEY}"] is missing -- the pdluker/space "Fetch launch schedule to KV" GitHub Action has never written it or it was deleted.` }];
+  }
+  let v;
+  try { v = JSON.parse(raw); } catch {
+    return [{ type: "heartbeat_degraded", severity: "warning", job, message: `SPACE_KV["${LAUNCH_FEED_KEY}"] is not valid JSON.` }];
+  }
+  const fetchedAt = v.fetchedAt ? Date.parse(v.fetchedAt) : NaN;
+  const ageH = Number.isFinite(fetchedAt) ? (now - fetchedAt) / 3600000 : Infinity;
+  if (ageH > LAUNCH_FEED_MAX_H) {
+    return [{
+      type: "heartbeat_stale", severity: "warning", job, lastSuccess: v.fetchedAt || null,
+      message: `Launch schedule in SPACE_KV is ${Number.isFinite(ageH) ? Math.round(ageH) + "h" : "of unknown age"} old (expected < ${LAUNCH_FEED_MAX_H}h). The pdluker/space "Fetch launch schedule to KV" GitHub Action is failing -- check its run log; a KV write HTTP 401 means its CF_API_TOKEN secret needs replacing.`,
+    }];
+  }
+  if (!v.launches?.length) {
+    return [{ type: "heartbeat_degraded", severity: "warning", job, lastSuccess: v.fetchedAt, message: `Launch schedule in SPACE_KV is fresh but empty: ${v.error || "both LL2 and the SpaceX fallback returned nothing"}.` }];
+  }
+  return [];
+}
+
+/**
  * stickers.stluker.com runs its OWN daily cron (50 11 * * *) and keeps its own
  * run log in D1, so it can't write a STATUS_KV heartbeat the way dispatcher
  * tasks do. Instead this pulls its authenticated /health and decides staleness
@@ -410,6 +450,7 @@ export async function reconcile(env, data) {
     ...(await safe(() => checkStickersHealth(env))),
     ...(await safe(() => checkTrackersHealth())),
     ...(await safe(() => checkInsightsSignals())),
+    ...(await safe(() => checkLaunchFeed(env))),
   ];
 
   // ADDED 2026-10-05: live Worker inventory for the status board's
