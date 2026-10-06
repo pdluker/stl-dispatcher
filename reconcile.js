@@ -202,6 +202,101 @@ async function checkLaunchFeed(env, now = Date.now()) {
 }
 
 /**
+ * ElevenLabs credit balance for the status board. ADDED 2026-10-06.
+ *
+ * Every podcast (Earth and Orbit, AI Daily Recap, Innovation Daily, Builds,
+ * STL Weekly, Rails Beneath Us, Pokemon Podcast) draws from ONE Creator plan,
+ * but only aiPodcast checked the real balance, and only for itself. When the
+ * balance hits zero every show's TTS fails at once. This reads
+ * GET /v1/user/subscription once a day (same call aiPodcast makes), writes a
+ * snapshot to data.infrastructure.elevenlabs, and projects the balance at
+ * the reset date from the recent burn rate.
+ *
+ * Burn rate: the last 7 days of daily snapshots when there are at least 3 in
+ * the current cycle, else credits used / days elapsed since the cycle began.
+ * History is carried forward through data.json itself (35 days max).
+ */
+const EL_HISTORY_DAYS = 35;
+const EL_WARN_MARGIN = 0.05; // warn if projected balance at reset < 5% of the limit
+
+function utcDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+async function checkElevenLabsCredits(env, data, now = Date.now()) {
+  const job = "elevenlabs:credits";
+  if (!env.ELEVENLABS_API_KEY) {
+    return [{ type: "elevenlabs_check_skipped", severity: "info", job, message: "ELEVENLABS_API_KEY not set on stl-dispatcher; credit balance not monitored." }];
+  }
+  const res = await fetch("https://api.elevenlabs.io/v1/user/subscription", {
+    headers: { "xi-api-key": env.ELEVENLABS_API_KEY },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (res.status === 401 || res.status === 403) {
+    return [{ type: "elevenlabs_check_skipped", severity: "info", job, message: `ElevenLabs subscription endpoint returned ${res.status}: the API key needs the user_read permission for the board to show the credit balance.` }];
+  }
+  if (!res.ok) throw new Error(`ElevenLabs subscription HTTP ${res.status}`);
+  const sub = await res.json();
+
+  const limit = sub.character_limit || 0;
+  const used = sub.character_count || 0;
+  const remaining = Math.max(0, limit - used);
+  const resetMs = (sub.next_character_count_reset_unix || 0) * 1000;
+  const cycleStart = new Date(resetMs); cycleStart.setUTCMonth(cycleStart.getUTCMonth() - 1);
+  const cycleStartMs = cycleStart.getTime();
+  const daysLeft = Math.max(0, (resetMs - now) / 86400000);
+  const elapsed = Math.max(0.5, (now - cycleStartMs) / 86400000);
+
+  // Carry the daily history forward; drop days from a previous cycle (usage resets).
+  const prev = data.infrastructure?.elevenlabs?.history || [];
+  const today = utcDay(now);
+  const history = [...prev.filter((h) => h.date !== today), { date: today, used }]
+    .filter((h) => Date.parse(h.date + "T23:59:59Z") >= cycleStartMs)
+    .slice(-EL_HISTORY_DAYS);
+
+  let burnPerDay, burnBasis;
+  const week = history.filter((h) => Date.parse(h.date) >= now - 7 * 86400000);
+  if (week.length >= 3) {
+    const first = week[0], last = week[week.length - 1];
+    const span = (Date.parse(last.date) - Date.parse(first.date)) / 86400000;
+    burnPerDay = span > 0 ? Math.max(0, (last.used - first.used) / span) : used / elapsed;
+    burnBasis = span > 0 ? `last ${Math.round(span)} days` : "cycle average";
+  } else {
+    burnPerDay = used / elapsed;
+    burnBasis = "cycle average";
+  }
+  const projectedAtReset = Math.round(remaining - burnPerDay * daysLeft);
+  const runOutMs = burnPerDay > 0 ? now + (remaining / burnPerDay) * 86400000 : null;
+
+  data.infrastructure = data.infrastructure || {};
+  data.infrastructure.elevenlabs = {
+    fetchedAt: new Date(now).toISOString(),
+    tier: sub.tier || null,
+    limit, used, remaining,
+    resetAt: resetMs ? new Date(resetMs).toISOString() : null,
+    daysLeft: Math.round(daysLeft * 10) / 10,
+    burnPerDay: Math.round(burnPerDay),
+    burnBasis,
+    projectedAtReset,
+    projectedMonthly: Math.round(burnPerDay * 30),
+    runOutAt: runOutMs && runOutMs < resetMs ? new Date(runOutMs).toISOString() : null,
+    history,
+  };
+
+  if (projectedAtReset < 0) {
+    return [{
+      type: "elevenlabs_credits_short", severity: "warning", job,
+      message: `ElevenLabs credits run out around ${utcDay(runOutMs)}, before the ${utcDay(resetMs)} reset (${remaining.toLocaleString("en-US")} left, burning ~${Math.round(burnPerDay).toLocaleString("en-US")}/day). Every podcast's TTS fails at zero.`,
+    }];
+  }
+  if (limit && projectedAtReset < limit * EL_WARN_MARGIN) {
+    return [{
+      type: "elevenlabs_credits_low", severity: "warning", job,
+      message: `ElevenLabs credits are projected to reach only ${projectedAtReset.toLocaleString("en-US")} by the ${utcDay(resetMs)} reset (~${Math.round(burnPerDay).toLocaleString("en-US")}/day).`,
+    }];
+  }
+  return [];
+}
+
+/**
  * stickers.stluker.com runs its OWN daily cron (50 11 * * *) and keeps its own
  * run log in D1, so it can't write a STATUS_KV heartbeat the way dispatcher
  * tasks do. Instead this pulls its authenticated /health and decides staleness
@@ -451,6 +546,7 @@ export async function reconcile(env, data) {
     ...(await safe(() => checkTrackersHealth())),
     ...(await safe(() => checkInsightsSignals())),
     ...(await safe(() => checkLaunchFeed(env))),
+    ...(await safe(() => checkElevenLabsCredits(env, data))),
   ];
 
   // ADDED 2026-10-05: live Worker inventory for the status board's
