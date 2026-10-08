@@ -403,7 +403,7 @@ export async function summarizeClusters(clusters, env, fetchImpl = fetch) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-haiku-5-5",
         // CHANGED 2026-07-25: raised from 2000 — a full batch of
         // SUMMARIZE_BATCH_SIZE (25) items each needing a headline, summary,
         // whyItMatters, and category can plausibly exceed 2000 tokens on a
@@ -418,7 +418,7 @@ export async function summarizeClusters(clusters, env, fetchImpl = fetch) {
         // was stored at the time — so this is a preventive fix plus the
         // batchesFailed/lastRawSnippet tracking below, so a repeat is
         // diagnosable instead of another guess.
-        max_tokens: 4096,
+        max_tokens: 12288,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -547,8 +547,8 @@ export async function generateBriefing(summarized, env, fetchImpl = fetch) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
+        model: "claude-haiku-5-5",
+        max_tokens: 900,
         messages: [{ role: "user", content: prompt }],
       }),
     });

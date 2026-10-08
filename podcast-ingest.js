@@ -12,8 +12,11 @@
 // default, which counts against max_tokens -- so the main script call gets a
 // larger cap (MAX_SCRIPT_TOKENS) and the small helper calls disable thinking
 // via HELPER_THINKING to keep their tight caps meaningful.
-const SCRIPT_MODEL = "claude-sonnet-5";
-const HELPER_THINKING = { type: "disabled" };
+// CHANGED 2026-10-08: Sonnet 5 -> Sonnet 5.5, which rejects
+// thinking: {type: "disabled"} with a 400; between_tools is its lowest
+// setting (no extended thinking; effort must stay high or below).
+const SCRIPT_MODEL = "claude-sonnet-5-5";
+const HELPER_THINKING = { type: "between_tools" };
 const ANTHROPIC_VERSION = "2023-06-01";
 const TARGET_WORDS = 900;
 // CHANGED 2026-08-13: 1400 -> 2600. Episodes were consistently landing at

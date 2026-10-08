@@ -21,7 +21,7 @@
 
 import { fetchSource, recordSourceResult } from './fetch-source.js';
 
-const MODEL = 'claude-sonnet-5';
+const MODEL = 'claude-sonnet-5-5';
 const ANTHROPIC_VERSION = '2023-06-01';
 // Adaptive thinking shares this budget with the JSON output (see the
 // 2026-09-24 note in podcast-ingest.js) -- keep it generous.

@@ -546,8 +546,8 @@ async function callIntelligence(env, counts, items, referencePool) {
     return { briefing: null, whyItMatters: {}, error: "ANTHROPIC_API_KEY not bound on stl-dispatcher" };
   }
   const body = {
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1300,
+    model: "claude-haiku-5-5",
+    max_tokens: 3900,
     system: [{ type: "text", text: INTELLIGENCE_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: buildIntelligenceUserPrompt(counts, items, referencePool || []) }],
   };
