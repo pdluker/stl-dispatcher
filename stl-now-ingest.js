@@ -37,14 +37,15 @@
  *    a prompt instruction alone is a request, not a guarantee.
  */
 
-const SCRIPT_MODEL = 'claude-haiku-4-5-20251001';
+const SCRIPT_MODEL = 'claude-haiku-5-5';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 // ---- Cost controls. Same shape as podcast-ingest.js; tune here, nowhere else.
 const TARGET_WORDS = 700;              // ~4-5 min at a 150 wpm read -- shorter than
                                         // Orbit and Ground; three light segments, not
                                         // deep science stories.
-const MAX_SCRIPT_TOKENS = 1200;
+const MAX_SCRIPT_TOKENS = 3600;          // CHANGED 2026-10-08: 1200 -> 3600 for Haiku 5.5,
+                                        // whose adaptive thinking shares this budget.
 const MAX_SCRIPT_CHARS = 5500;
 const MONTHLY_CREDIT_BUDGET = 92000;   // separate ledger key from podcast:credits --
                                         // confirm actual remaining headroom on the
