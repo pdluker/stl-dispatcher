@@ -1550,6 +1550,7 @@ async function generateScript(env, digest, quote, diagnostics) {
 // getting either of those wrong here would just trade one silent failure
 // mode for another.
 const IMAGE_MODEL_IDS = {
+  klein: "@cf/black-forest-labs/flux-2-klein-4b",
   flux2: "@cf/black-forest-labs/flux-2-dev",
   lucid: "@cf/leonardo/lucid-origin",
   schnell: "@cf/black-forest-labs/flux-1-schnell",
@@ -1561,7 +1562,9 @@ const IMAGE_MODEL_IDS = {
 // mascot illustration" styles, neither of which fits a news-briefing
 // cover). Lucid is kept as a second attempt anyway, purely for resilience
 // -- a stylistically-imperfect cover still beats no cover on a bad day.
-const IMAGE_MODEL_CHAIN = ["flux2", "lucid", "schnell"];
+// CHANGED 2026-10-08 (t17): klein first for cost; the rest stay as fallbacks.
+// runImageModel's flux-2 branch already sends klein as multipart, no steps.
+const IMAGE_MODEL_CHAIN = ["klein", "flux2", "lucid", "schnell"];
 // CHANGED 2026-10-05: was 1024x1024. pod-worker.js now uses the latest
 // episode's cover as the CHANNEL artwork, and Apple Podcasts rejects channel
 // art under 1400x1400. 1440 rather than 1400 because FLUX works in 16-px
@@ -1595,6 +1598,7 @@ function imageDimensions(bytes, ext) {
 
 function imageModelChain(env) {
   const ids = {
+    klein: IMAGE_MODEL_IDS.klein,
     flux2: env.IMAGE_MODEL || IMAGE_MODEL_IDS.flux2,
     lucid: env.LUCID_MODEL || IMAGE_MODEL_IDS.lucid,
     schnell: env.IMAGE_FALLBACK_MODEL || IMAGE_MODEL_IDS.schnell,
