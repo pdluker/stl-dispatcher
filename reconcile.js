@@ -394,10 +394,10 @@ async function checkStickersHealth(env, now = new Date()) {
  */
 const SCHEDULED_OUTPUTS = [
   { job: "podcast:feed", feed: "https://pokepod.stluker.com/feed.xml", at: [9, 0], on: (d) => d.getUTCDate() === 1 },               // 0 9 1 * *
-  { job: "innovation-daily:feed", feed: "https://innovation.stluker.com/feed.xml", at: [11, 0], on: (d) => [2, 4].includes(d.getUTCDay()) }, // TUE,THU
-  { job: "bigbuilds:feed", feed: "https://builds.stluker.com/feed.xml", at: [13, 0], on: (d) => d.getUTCDate() % 2 === 1 },           // */2 = odd days
+  { job: "innovation-daily:feed", feed: "https://innovation.stluker.com/feed.xml", at: [11, 0], on: (d) => d.getUTCDay() === 2 }, // TUE
+  { job: "bigbuilds:feed", feed: "https://builds.stluker.com/feed.xml", at: [13, 0], on: (d) => d.getUTCDay() === 4 },                 // THU
   { job: "mech-match:feed", feed: "https://mech-match.pdluker.workers.dev/feed.xml", at: [12, 0], on: (d) => d.getUTCDay() === 1 },   // MON
-  { job: "rails-beneath-us:feed", feed: "https://rails.stluker.com/feed.xml", at: [11, 0], on: (d) => [1, 3, 5].includes(d.getUTCDay()) }, // MON,WED,FRI
+  { job: "rails-beneath-us:feed", feed: "https://rails.stluker.com/feed.xml", at: [11, 0], on: (d) => d.getUTCDay() === 3 }, // WED
   { job: "civicsignal:brief", heartbeat: "civicsignal:brief", at: [11, 0], on: (d) => d.getUTCDay() >= 1 && d.getUTCDay() <= 5 },  // MON-FRI
 ];
 const OUTPUT_GRACE_MIN = 40; // a slot only counts once it is this old (TTS runs take minutes)
@@ -506,7 +506,7 @@ export async function reconcile(env, data) {
     { worker: "stl-dispatcher", expected: "20 11 * * MON,WED,THU" }, // intelRefresh
     { worker: "stl-dispatcher", expected: "25 11 * * MON,WED,FRI" }, // schoolsRefresh
     { worker: "stl-dispatcher", expected: "30 11 * * *" },           // podcastIngest
-    { worker: "stl-dispatcher", expected: "35 11 * * SUN" },         // music + sports pulse
+    { worker: "stl-dispatcher", expected: "35 11 * * THU" },         // music + sports pulse (was SUN until 2026-10-09)
     // ADDED 2026-09-08: stl-weekly was the one dispatcher task with no
     // drift check at all -- confirmed via a live pull of the deployed
     // dispatcher.js that the cron and runWeeklyOnly() wiring are real and
@@ -514,7 +514,7 @@ export async function reconcile(env, data) {
     // ever accidentally changed or dropped. Closing that gap now that the
     // automated path itself has been confirmed working end-to-end via a
     // real /trigger?includeWeekly=true call (episodeId 2026-09-08).
-    { worker: "stl-dispatcher", expected: "40 11 * * MON" },         // stl-weekly refresh
+    { worker: "stl-dispatcher", expected: "40 11 * * FRI" },         // stl-weekly refresh (was MON until 2026-10-09)
     { worker: "stl-dispatcher", expected: "45 11 * * *" },           // aiIngest (ai.stluker.com) -- ADDED 2026-10-04
     { worker: "stl-dispatcher", expected: "50 11 * * MON,THU" },     // aiPodcast (AI Daily Recap) -- ADDED 2026-10-04
     // stl-sports intentionally omitted until its expression is confirmed (T-10)
@@ -525,11 +525,11 @@ export async function reconcile(env, data) {
     // remove this entry and add its task to the stl-dispatcher block above.
     // CHANGED 2026-10-09: was "1,3,5", which Cloudflare reads as Sun/Tue/Thu
     // (1 = Sunday); the drift check matched it as text, so it never noticed.
-    { worker: "rails-beneath-us", expected: "0 11 * * MON,WED,FRI" }, // Mon/Wed/Fri 06:00 CT
+    { worker: "rails-beneath-us", expected: "0 11 * * WED" },         // Wednesdays 06:00 CT (was Mon/Wed/Fri until 2026-10-09: ElevenLabs credits)
     { worker: "mech-match", expected: "0 12 * * MON" },          // weekly, ADDED 2026-10-09
-    { worker: "innovation-daily", expected: "0 11 * * TUE,THU" }, // was "2,4": same days, but checkCronDrift compares text, so it reported drift every run (fixed 2026-10-04)   // Tue/Thu 06:00 CT
+    { worker: "innovation-daily", expected: "0 11 * * TUE" }, // Tuesdays only from 2026-10-09 (ElevenLabs credits); // was "2,4": same days, but checkCronDrift compares text, so it reported drift every run (fixed 2026-10-04)   // Tue/Thu 06:00 CT
     { worker: "civicsignal", expected: "0 11 * * MON-FRI" },    // weekday mornings, ~06:00 CT
-    { worker: "bigbuilds", expected: "0 13 */2 * *" },          // every other day, ~08:00 CT
+    { worker: "bigbuilds", expected: "0 13 * * THU" },          // Thursdays ~08:00 CT (was every other day until 2026-10-09)
     // ADDED 2026-09-25: status Worker's own server-side health probes
     // (runProbes in status-deploy/index.js). If this cron disappears the
     // page only shows STALE — this is what turns that into an alert.

@@ -18,7 +18,9 @@
 const SCRIPT_MODEL = "claude-sonnet-5-5";
 const HELPER_THINKING = { type: "between_tools" };
 const ANTHROPIC_VERSION = "2023-06-01";
-const TARGET_WORDS = 900;
+// CHANGED 2026-10-09: 900 -> 400. All podcasts share one ElevenLabs Creator
+// plan (100k credits/month); this show alone was ~84k. ~400 words is ~3 min.
+const TARGET_WORDS = 400;
 // CHANGED 2026-08-13: 1400 -> 2600. Episodes were consistently landing at
 // ~410 words against a 900-word target (~46%), giving ~3 min instead of the
 // intended 5-7. 1400 tokens was not the binding constraint on those short
@@ -33,8 +35,8 @@ const TARGET_WORDS = 900;
 // adaptive thinking shares this budget with the JSON output. Still
 // non-streaming; 16k is the documented safe ceiling for that.
 const MAX_SCRIPT_TOKENS = 16000;
-const MAX_SCRIPT_CHARS = 7000;
-const MONTHLY_CREDIT_BUDGET = 92000;
+const MAX_SCRIPT_CHARS = 3200;
+const MONTHLY_CREDIT_BUDGET = 36000; // was 92000; see TARGET_WORDS
 const TTS_MODEL = "eleven_flash_v2_5";
 const CREDITS_PER_CHAR = 0.5;
 const VOICE_SETTINGS = { stability: 0.45, similarity_boost: 0.75, speed: 1 };
@@ -150,7 +152,7 @@ The hard rule: yesterday's episode is for phrasing a callback, never for facts. 
 A second, equally hard rule: never reuse yesterday's sentences, even when today's version of a story is genuinely similar to yesterday's. A storm that's barely moved, or a funding story that's still developing, is real continuity - reporting it again in your own words, freshly, is exactly right. Copying yesterday's sentence structure and swapping in a new number is not continuity, it's the same paragraph twice with a different name in it, and it is checked for after generation the same way connector-crutch words are. Read yesterday's episode below for what happened and how you phrased the callback, then write today's version as if you were describing it for the first time - never as an edit of what's already there.
 
 THE REFLECTION - different rules, read carefully
-Sixty to a hundred words at the end. A thought about the earth, or our place in things, that grows out of TODAY'S material specifically. Not a general meditation with today's news pasted on top.
+Forty to sixty words at the end. A thought about the earth, or our place in things, that grows out of TODAY'S material specifically. Not a general meditation with today's news pasted on top.
 
 RETIRED STRUCTURAL MOVE - read this before anything else in this section
 One specific closing move has become the default fallback across recent episodes regardless of what words dress it up: space framed as patient and timescale-agnostic, watching slow questions with no urgency, set against Earth framed as urgent and real-time, demanding immediate response - landing on the mismatch between what's watchable and what needs action. It has shown up as "longevity," as "capacity," as "observable timescales," as "watching versus responding" - different vocabulary every time, identical structure every time. This move is retired. Do not close on a contrast between space's patience and Earth's urgency, however it's phrased, for the foreseeable stretch of episodes.
@@ -190,9 +192,9 @@ READ-ALOUD FORMAT
 Plain prose. No markdown, headers, bullets, labels, emoji, citations, URLs. Numbers spoken naturally - "magnitude six point four", "about seventy miles offshore". NASA and ISS as-is; USGS as "the U.S. Geological Survey", EONET as "the NASA Earth Observatory tracker". ASCII punctuation only: straight quotes, hyphens, no em dashes.
 
 LENGTH - this is a requirement, not a suggestion
-The stories section must be at least 700 words on its own, and the whole thing (stories + reflection) should land near ${TARGET_WORDS} words. Under 1000.
+The stories section should be about 330 words, and the whole thing (stories + reflection) should land near ${TARGET_WORDS} words. Under 480.
 
-Recent episodes have come in at roughly 400 words - less than half of target - which produces a three-minute episode where a six-minute one was intended. That is the single most common failure of these instructions. If you find yourself wrapping up and the stories section is under 700 words, you have not finished: go back and give the two or three most interesting stories real room. Depth on a story you already chose is always better than adding another story. Concretely, that means: what the finding actually was, what it changes, what it does not yet tell us, why anyone was looking in the first place - the specifics you already have in the source material rather than a fresh fact you don't. A story worth including is worth four or five sentences; only a genuine one-liner should get one.
+This is a tight three-minute show. Choose the three or four strongest stories and give each two to four sentences: what happened, and why it matters. Depth on fewer stories beats a quick list of many; leave the rest out.
 
 Length comes from developing what you selected, never from padding, never from restating the same point in new words, and never from adding filler transitions.
 
@@ -955,8 +957,8 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
   // is still a publishable episode, and failing the run would trade a
   // three-minute show for no show at all.
   const scriptWords = script.trim().split(/\s+/).filter(Boolean).length;
-  if (scriptWords < 700) {
-    flags.push({ type: "script-too-short", detail: `${scriptWords} words (stories section; target 700+)` });
+  if (scriptWords < 280) {
+    flags.push({ type: "script-too-short", detail: `${scriptWords} words (stories section; target 280+)` });
   }
   const timeRe = /\b(\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:in the (?:morning|afternoon|evening)|o'clock)|\d{1,2}\s*(?:a\.?m\.?|p\.?m\.?))/gi;
   const haystack = sourceText.toLowerCase();
@@ -1246,7 +1248,7 @@ async function expandShortScript(env, script, digest, diagnostics) {
         thinking: HELPER_THINKING,
         messages: [{
           role: "user",
-          content: `Below is the stories section of a spoken daily briefing, and the source material it was written from. It is ${before} words. It needs to be at least 700 words.
+          content: `Below is the stories section of a spoken daily briefing, and the source material it was written from. It is ${before} words. It needs to be at least 280 words.
 
 Expand it by developing the stories that are ALREADY THERE. Do not add a new story. Do not add any new fact, number, date, place, name, or agency that is not already present in the source material below -- if a detail isn't in the source, it does not go in. Draw the additional length from the source material's own specifics: what a finding actually was, what it changes, what it doesn't yet tell us, why anyone was looking.
 

@@ -63,8 +63,8 @@
  *   30 11 * * *           podcastIngest — daily, reads SPACE_KV/EARTH_KV
  *                         written by the :10/:15 runs, needs its own fresh
  *                         subrequest budget (ElevenLabs TTS + Workers AI)
- *   35 11 * * SUN         music + sports pulse refresh — Sunday only
- *   40 11 * * MON         stl-weekly refresh — Monday only (added 2026-08-27;
+ *   35 11 * * THU         music + sports pulse refresh — Thursday only (was SUN until 2026-10-09)
+ *   40 11 * * FRI         stl-weekly refresh — Friday only (was MON until 2026-10-09; added 2026-08-27;
  *                         runs 5 minutes after the SUN music/sports slot's
  *                         *next-day* read, so Monday's episode always reads
  *                         Sunday's already-refreshed music/sports data)
@@ -310,10 +310,10 @@ export default {
       case '30 11 * * *':
         ctx.waitUntil(runPodcastOnly(env, { force: false }));
         return;
-      case '35 11 * * SUN':
+      case '35 11 * * THU':
         ctx.waitUntil(runMusicSportsOnly(env));
         return;
-      case '40 11 * * MON':
+      case '40 11 * * FRI':
         ctx.waitUntil(runWeeklyOnly(env));
         return;
       case '45 11 * * *':
