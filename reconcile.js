@@ -382,7 +382,9 @@ async function checkStickersHealth(env, now = new Date()) {
  */
 export async function reconcile(env, data) {
   const declaredCrons = [
-    { worker: "stluker", expected: "0 9 " + "*/3 * *" },
+    // "stluker" cron entry REMOVED 2026-10-08 (t13): the Worker had no
+    // scheduled() handler, so "0 9 */3 * *" did nothing; the trigger was
+    // deleted the same day and this entry would now report permanent drift.
     // "stl-music" native cron entry REMOVED 2026-09-08: it was retired
     // 2026-07-30 when music/sports pulse folded into stl-dispatcher's
     // Sunday task ("35 11 * * SUN" below). This entry had no matching live
