@@ -376,6 +376,100 @@ async function checkStickersHealth(env, now = new Date()) {
 }
 
 /**
+ * CHECK — the six Workers that run their own crons (t16). ADDED 2026-10-09.
+ *
+ * The five podcasts are judged by their PUBLIC feed: the newest <item>
+ * <pubDate> must be at or after the most recent scheduled slot. No secrets,
+ * no bindings, no changes to those Workers -- and it proves what a listener
+ * sees, not just that a run finished. civicsignal has no feed, so it writes
+ * heartbeat:civicsignal:brief into STATUS_KV and is judged the same way.
+ *
+ * Per-slot rather than a flat maxAgeHours, because Tue/Thu or weekday-only
+ * schedules have uneven gaps: any single window either misses a failure on
+ * the short gap or false-alarms over the long one.
+ *
+ * `on` takes a UTC Date and uses JS numbering (getUTCDay: 0 = Sunday), not
+ * Cloudflare cron numbering (1 = Sunday) -- that mismatch is exactly what left
+ * rails-beneath-us firing Sun/Tue/Thu until 2026-10-09.
+ */
+const SCHEDULED_OUTPUTS = [
+  { job: "podcast:feed", feed: "https://pokepod.stluker.com/feed.xml", at: [9, 0], on: (d) => d.getUTCDate() === 1 },               // 0 9 1 * *
+  { job: "innovation-daily:feed", feed: "https://innovation.stluker.com/feed.xml", at: [11, 0], on: (d) => [2, 4].includes(d.getUTCDay()) }, // TUE,THU
+  { job: "bigbuilds:feed", feed: "https://builds.stluker.com/feed.xml", at: [13, 0], on: (d) => d.getUTCDate() % 2 === 1 },           // */2 = odd days
+  { job: "mech-match:feed", feed: "https://mech-match.pdluker.workers.dev/feed.xml", at: [12, 0], on: (d) => d.getUTCDay() === 1 },   // MON
+  { job: "rails-beneath-us:feed", feed: "https://rails.stluker.com/feed.xml", at: [11, 0], on: (d) => [1, 3, 5].includes(d.getUTCDay()) }, // MON,WED,FRI
+  { job: "civicsignal:brief", heartbeat: "civicsignal:brief", at: [11, 0], on: (d) => d.getUTCDay() >= 1 && d.getUTCDay() <= 5 },  // MON-FRI
+];
+const OUTPUT_GRACE_MIN = 40; // a slot only counts once it is this old (TTS runs take minutes)
+const OUTPUT_SLACK_MIN = 10; // innovation-daily stamps pubDate at exactly 11:00:00
+
+function lastScheduledSlot({ at, on }, now) {
+  const cutoff = now.getTime() - OUTPUT_GRACE_MIN * 60000;
+  for (let back = 0; back <= 62; back++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back, at[0], at[1]));
+    if (d.getTime() <= cutoff && on(d)) return d;
+  }
+  return null;
+}
+
+// Item pubDates only: a channel-level <pubDate> is often the build time and
+// would make a dead feed look fresh.
+function newestItemPubDate(xml) {
+  let newest = -Infinity;
+  for (const item of xml.split("<item>").slice(1)) {
+    const m = item.match(/<pubDate>([^<]+)<\/pubDate>/);
+    const t = m ? Date.parse(m[1]) : NaN;
+    if (t > newest) newest = t;
+  }
+  return newest;
+}
+
+async function checkScheduledOutputs(env, now = new Date()) {
+  const findings = [];
+  for (const out of SCHEDULED_OUTPUTS) {
+    const slot = lastScheduledSlot(out, now);
+    if (!slot) continue;
+    const slotLabel = `${slot.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+    let newest;
+    if (out.heartbeat) {
+      const raw = await env.STATUS_KV.get(`heartbeat:${out.heartbeat}`);
+      const hb = raw ? JSON.parse(raw) : null;
+      newest = hb ? Date.parse(hb.lastSuccess) : -Infinity;
+      if (hb?.meta?.quality === "degraded" && newest >= slot.getTime() - OUTPUT_SLACK_MIN * 60000) {
+        findings.push({ type: "heartbeat_degraded", severity: "warning", job: out.job, lastSuccess: hb.lastSuccess, message: `${out.job} ran but was unhealthy: ${(hb.meta.qualityReasons || []).join("; ") || "no reason recorded"}.` });
+      }
+    } else {
+      let res;
+      try {
+        res = await fetch(out.feed, {
+          headers: { "User-Agent": "stl-dispatcher/1.0 (+https://stluker.com; internal service call)", "Cache-Control": "no-cache" },
+          signal: AbortSignal.timeout(10000),
+        });
+      } catch (e) {
+        findings.push({ type: "feed_unreachable", severity: "warning", job: out.job, message: `${out.feed} unreachable: ${String(e)}` });
+        continue;
+      }
+      if (!res.ok) {
+        findings.push({ type: "feed_unreachable", severity: "warning", job: out.job, message: `${out.feed} returned HTTP ${res.status}.` });
+        continue;
+      }
+      newest = newestItemPubDate(await res.text());
+    }
+    if (!(newest >= slot.getTime() - OUTPUT_SLACK_MIN * 60000)) {
+      const last = Number.isFinite(newest) ? new Date(newest).toISOString() : null;
+      findings.push({
+        type: "heartbeat_stale",
+        severity: "critical",
+        job: out.job,
+        lastSuccess: last,
+        message: `${out.job} has nothing for its ${slotLabel} slot (latest: ${last ? last.slice(0, 16).replace("T", " ") + " UTC" : "none"}).`,
+      });
+    }
+  }
+  return findings;
+}
+
+/**
  * Orchestrator — run all checks, fold findings into the data.json object under
  * a `verification` block plus synthesized smart recommendations. Returns the
  * mutated object for stl-status-sync to persist.
@@ -429,7 +523,10 @@ export async function reconcile(env, data) {
     // directly from its wrangler.jsonc — not folded into stl-dispatcher
     // (unlike everything else in this list). If it's ever consolidated,
     // remove this entry and add its task to the stl-dispatcher block above.
-    { worker: "rails-beneath-us", expected: "0 11 * * 1,3,5" }, // Mon/Wed/Fri 06:00 CT
+    // CHANGED 2026-10-09: was "1,3,5", which Cloudflare reads as Sun/Tue/Thu
+    // (1 = Sunday); the drift check matched it as text, so it never noticed.
+    { worker: "rails-beneath-us", expected: "0 11 * * MON,WED,FRI" }, // Mon/Wed/Fri 06:00 CT
+    { worker: "mech-match", expected: "0 12 * * MON" },          // weekly, ADDED 2026-10-09
     { worker: "innovation-daily", expected: "0 11 * * TUE,THU" }, // was "2,4": same days, but checkCronDrift compares text, so it reported drift every run (fixed 2026-10-04)   // Tue/Thu 06:00 CT
     { worker: "civicsignal", expected: "0 11 * * MON-FRI" },    // weekday mornings, ~06:00 CT
     { worker: "bigbuilds", expected: "0 13 */2 * *" },          // every other day, ~08:00 CT
@@ -545,6 +642,7 @@ export async function reconcile(env, data) {
     ...(await safe(() => checkWorkerInventory(env, trackedWorkers))),
     ...(await safe(() => checkHeartbeats(env, heartbeatJobs))),
     ...(await safe(() => checkStickersHealth(env))),
+    ...(await safe(() => checkScheduledOutputs(env))),
     ...(await safe(() => checkTrackersHealth())),
     ...(await safe(() => checkInsightsSignals())),
     ...(await safe(() => checkLaunchFeed(env))),
