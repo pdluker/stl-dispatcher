@@ -771,7 +771,11 @@ function selectSpaceStories(stories, max, staleIds) {
   return [...fresh, ...stale].slice(0, max);
 }
 
-function buildSourceDigest(space, earth, yesterday = null, staleEarthIds = null, staleSpaceIds = null, recentIdeas = []) {
+// ADDED 2026-10-09: ids on the non-story digest lines (see REGIONAL STATUS and
+// TONIGHT'S SKY below), valid claim sources whenever the line is present.
+const DIGEST_EXTRA_IDS = ["regional-status", "tonights-sky"];
+
+function buildSourceDigest(space, earth,yesterday = null, staleEarthIds = null, staleSpaceIds = null, recentIdeas = []) {
   const lines = [];
   // CHANGED 2026-09-16: prompted by Cyclone Lowell reporting the exact same
   // position, citing the exact same Sep 11 source date, on four straight
@@ -814,7 +818,11 @@ function buildSourceDigest(space, earth, yesterday = null, staleEarthIds = null,
   }
   if (quietNotes.length) {
     lines.push("");
-    lines.push(`REGIONAL STATUS (mention only if it fits naturally, do not force it): ${quietNotes.join(" ")}`);
+    // CHANGED 2026-10-09: now carries an id. Without one, any fact the model
+    // took from this line was flagged invented-source-id (5 of 11 episodes,
+    // Sep 28-Oct 9) though it was supplied. Ids are added to validIds in
+    // runPodcastIngestCore via DIGEST_EXTRA_IDS.
+    lines.push(`REGIONAL STATUS id=regional-status (mention only if it fits naturally, do not force it): ${quietNotes.join(" ")}`);
   }
   const sky = space.raw?.tonight;
   if (sky) {
@@ -827,7 +835,7 @@ function buildSourceDigest(space, earth, yesterday = null, staleEarthIds = null,
     }
     if (bits.length) {
       lines.push("");
-      lines.push(`TONIGHT'S SKY (optional, use only if it fits the close): ${bits.join(", ")}.`);
+      lines.push(`TONIGHT'S SKY id=tonights-sky (optional, use only if it fits the close): ${bits.join(", ")}.`);
     }
   }
   // ADDED 2026-08-23 (closing gap #1, continuity): yesterday's script,
@@ -854,6 +862,51 @@ function buildSourceDigest(space, earth, yesterday = null, staleEarthIds = null,
     lines.push(...recentIdeas.map((r) => `- ${r.day}: ${r.idea}`));
   }
   return lines.join("\n");
+}
+
+// CHANGED 2026-10-09: punctuation is now ignored when matching the quote.
+// Sep 29 was flagged only because the quote's closing period became a comma
+// before the attribution; the words were exact. Word changes, drops, and
+// "..." trims (Oct 3 Leonov, Oct 5 Mitchell) still fail.
+function quoteIsVerbatim(reflection, quote) {
+  const norm = (t) => t.toLowerCase().replace(/[‘’]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
+  return norm(reflection).includes(norm(quote.text));
+}
+
+// ADDED 2026-10-09: one-shot repair for a trimmed or altered quote. The
+// prompt already forbids it, but Oct 3 and Oct 5 both shortened long quotes
+// with "..." and nothing acted on the flag. Accepts the rewrite only if it
+// now contains the quote verbatim; otherwise keeps the original.
+async function restoreQuote(env, reflection, quote, diagnostics) {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
+      body: JSON.stringify({
+        model: SCRIPT_MODEL,
+        max_tokens: 3000,
+        thinking: HELPER_THINKING,
+        output_config: { format: { type: "json_schema", schema: { type: "object", properties: { reflection: { type: "string" } }, required: ["reflection"], additionalProperties: false } } },
+        messages: [{
+          role: "user",
+          content: `This closing reflection for a spoken audio briefing quotes ${quote.who} but shortened or changed the quotation. Rewrite the reflection so it contains the quotation EXACTLY as given below - every word, in order, no "...", no trimming - attributed to ${quote.who}. Keep the same idea and voice, plain prose, no numbers, dates, or place names, and stay under 130 words; trim your own sentences to make room rather than the quotation.\n\nQUOTATION:\n"${quote.text}"\n\nREFLECTION:\n${reflection}`
+        }]
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const rewritten = toSpeakableAscii(parseScriptJson(text).reflection || "");
+    if (!rewritten || !quoteIsVerbatim(rewritten, quote)) {
+      diagnostics.push({ step: "quote-repair", ok: false, note: "rewrite still lacked the verbatim quote; keeping original" });
+      return reflection;
+    }
+    diagnostics.push({ step: "quote-repair", ok: true, before: reflection.split(/\s+/).length, after: rewritten.split(/\s+/).length });
+    return rewritten;
+  } catch (err) {
+    diagnostics.push({ step: "quote-repair", ok: false, error: String(err.message || err).slice(0, 150) });
+    return reflection;
+  }
 }
 
 function auditClaims(script, claims, validIds, sourceText, reflection = "", quote = null) {
@@ -935,7 +988,11 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
   const copied = [];
   for (let i = 0; i + SHINGLE <= scriptWordList.length; i++) {
     const s = scriptWordList.slice(i, i + SHINGLE).join(" ");
-    if (srcShingles.has(s)) { copied.push(s); i += SHINGLE - 1; }
+    // CHANGED 2026-10-09: skip runs containing a number. Those are figure
+    // strings ("about 270 miles south of tokyo with winds near 35") that
+    // the INFERENCE RULE requires be stated exactly as supplied -- 7 of 11
+    // episodes Sep 28-Oct 9 were flagged, mostly for this.
+    if (srcShingles.has(s) && !/\d/.test(s)) { copied.push(s); i += SHINGLE - 1; }
   }
   if (copied.length) flags.push({ type: "verbatim-source-copy", detail: `${copied.length} run(s): ${copied[0].slice(0, 70)}` });
   // ADDED 2026-09-24: "It's not X. It's not Y." / "That's not a finding.
@@ -995,8 +1052,7 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
     const named = checkable.match(NAMED);
     if (named) flags.push({ type: "reflection-names-source-or-date", detail: [...new Set(named)].join(", ") });
     if (quote) {
-      const norm = (t) => t.replace(/["\u201C\u201D]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-      if (!norm(reflection).includes(norm(quote.text))) flags.push({ type: "quote-altered-or-missing", id: quote.id, detail: quote.text.slice(0, 60) });
+      if (!quoteIsVerbatim(reflection, quote)) flags.push({ type: "quote-altered-or-missing", id: quote.id, detail: quote.text.slice(0, 60) });
       if (!reflection.includes(quote.who)) flags.push({ type: "quote-attribution-missing", detail: quote.who });
     }
     const CORNY = ["in the grand scheme", "puts things in perspective", "puts it in perspective", "how small we", "makes you realize", "we are all stardust", "we are stardust", "pale blue dot", "the universe is vast", "humbling", "take a moment", "next time you look", "remember that we", "speck", "cosmic dance"];
@@ -1790,7 +1846,26 @@ async function synthesizeSpeech(env, script, diagnostics) {
   return buf;
 }
 
+// ADDED 2026-10-09: every run's result (diagnostics included) is saved under
+// podcast:run:<day> for 30 days. Sep 30 produced no episode and no trace --
+// diagnostics only lived in the return value, and podcast:last-error was
+// cleared by the next successful run. A force re-run overwrites the same
+// day's key. Saving never throws; a KV hiccup here must not fail the run.
+const RUN_LOG_TTL_SECONDS = 30 * 86400;
 export async function runPodcastIngest(env, opts = {}) {
+  const result = await runPodcastIngestCore(env, opts);
+  try {
+    // An "already generated" skip would overwrite the real run's log.
+    if (env.PODCAST_KV && result.skipped !== "already-generated") {
+      await env.PODCAST_KV.put(`podcast:run:${result.day}`, JSON.stringify({ ...result, savedAt: new Date().toISOString() }), { expirationTtl: RUN_LOG_TTL_SECONDS });
+    }
+  } catch (err) {
+    console.error(`[stl-dispatcher] could not save podcast run log: ${err.message}`);
+  }
+  return result;
+}
+
+async function runPodcastIngestCore(env, opts = {}) {
   const diagnostics = [];
   const day = utcDayKey();
   const result = { ran: false, ok: false, day, diagnostics };
@@ -1922,8 +1997,23 @@ export async function runPodcastIngest(env, opts = {}) {
 
     let script = gen.reflection ? `${gen.script}\n\n${gen.reflection}` : gen.script;
     const validIds = new Set([...space.stories, ...earth.events].map((s) => s.id).filter(Boolean));
+    for (const id of DIGEST_EXTRA_IDS) if (digest.includes(`id=${id}`)) validIds.add(id);
     const audit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
     diagnostics.push({ step: "audit", ok: audit.clean, claims: audit.claimCount, flags: audit.flags });
+
+    // ADDED 2026-10-09: act on a trimmed/altered quote (see restoreQuote).
+    // Runs before the reflection-length tightening below, which re-audits.
+    if (gen.reflection && audit.flags.some((f) => f.type === "quote-altered-or-missing")) {
+      const restored = await restoreQuote(env, gen.reflection, quote, diagnostics);
+      if (restored !== gen.reflection) {
+        gen.reflection = restored;
+        script = `${gen.script}\n\n${gen.reflection}`;
+        const reAudit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
+        diagnostics.push({ step: "audit", ok: reAudit.clean, claims: reAudit.claimCount, flags: reAudit.flags, note: "post-quote-repair re-audit" });
+        audit.flags = reAudit.flags;
+        audit.clean = reAudit.clean;
+      }
+    }
 
     // ADDED 2026-09-02: prompted by Sep1->Sep2 reusing 94% of a paragraph's
     // words verbatim. Runs BEFORE length expansion, deliberately -- fixing
@@ -1954,7 +2044,11 @@ export async function runPodcastIngest(env, opts = {}) {
     const reflectionTooLong = audit.flags.find((f) => f.type === "reflection-too-long");
     if (reflectionTooLong && gen.reflection) {
       const tightened = await tightenText(env, gen.reflection, 100, "reflection", diagnostics);
-      if (tightened !== gen.reflection) {
+      // CHANGED 2026-10-09: don't accept a tightening that trims the quote --
+      // a slightly long reflection beats an altered quotation.
+      const keptQuote = !quoteIsVerbatim(gen.reflection, quote) || quoteIsVerbatim(tightened, quote);
+      if (!keptQuote) diagnostics.push({ step: "tighten", ok: false, label: "reflection", note: "tightened text dropped the verbatim quote; keeping original" });
+      if (tightened !== gen.reflection && keptQuote) {
         gen.reflection = tightened;
         script = `${gen.script}\n\n${gen.reflection}`;
         const reAudit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
