@@ -5,3 +5,6 @@ node_modules/
 *.bak-*
 .env
 .env.*
+
+# Claude Code plugin data (local SQLite), not source
+.claude/data/
