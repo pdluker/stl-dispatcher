@@ -37,7 +37,7 @@
 //      reinvented. 5 feeds, fetched concurrently via Promise.all (not
 //      sequentially) so they add latency, not much subrequest serialization
 //      time, to the run. One failed feed does not affect the others.
-// Worst case: 5 + 5 = 10 subrequests, well under the 50/invocation cap
+// Worst case: 6 + 5 = 11 subrequests (USGS HANS added 2026-10-09), well under the 50/invocation cap
 // shared across the whole dispatcher run. The three USGS "required"
 // sources are fetched first and are the ones this module treats as
 // must-succeed; EONET, GVP, and every NEWS_FEEDS entry degrade to "carry
@@ -87,6 +87,15 @@ const GVP_MAX_AGE_MS = 6 * 24 * 3600 * 1000; // re-fetch GVP at most ~weekly
 // fixes were deployed but the cached pre-fix data kept getting served
 // because only time-based staleness was checked, not a schema change.
 const GVP_SCHEMA_VERSION = 2;
+// 2026-10-09: GVP's RSS answers Cloudflare's egress with HTTP 403 (it returns 200
+// from elsewhere), so a failed weekly refetch is expected for now. Carrying
+// forward a weekly report for up to two weeks is fine; only after that does
+// the failure become a warning (and an alert email). Before that it is a notice.
+const GVP_STALE_ALERT_MS = 14 * 24 * 3600 * 1000;
+// 2026-10-09: USGS Volcano Hazards Program public notices (HANS): every US
+// volcano currently above normal (color code / alert level). Free, no key.
+// Supplements GVP for US volcanoes only; GVP stays the global source.
+const HANS_ELEVATED_URL = "https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes";
 
 // EONET result-set caps (2026-08-26, added alongside the days=2 removal
 // above). Previously the days=2 query parameter did double duty as both
@@ -136,7 +145,13 @@ async function fetchGvpRssText(url, timeoutMs) {
   // for ESPN/LL2: retry once with the browser-shaped UA before giving up.
   if (res.status === 403) {
     res = await fetch(url, {
-      headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8" },
+      // 2026-10-09: Accept-Language is what GVP's bot filter checks. Tested from a
+      // datacenter IP: browser UA without it -> 403; with it -> 200 (34 KB RSS).
+      headers: {
+        "User-Agent": BROWSER_UA,
+        Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
       signal: AbortSignal.timeout(timeoutMs || 8000),
     });
   }
@@ -210,6 +225,20 @@ function parseEonetEvents(json, wantedCategoryId) {
 // earlier guess that assumed "Name (Country)" was the whole title). Split on " - "
 // (space-hyphen-space) rather than a bare "-", since the date range itself contains
 // an un-spaced hyphen (e.g. "2 July-8 July 2026") that would otherwise be split on.
+function parseHansElevated(json) {
+  if (!Array.isArray(json)) return [];
+  return json
+    .filter((v) => v && v.volcano_name)
+    .map((v) => ({
+      name: sanitizeAscii(String(v.volcano_name)),
+      observatory: v.obs_abbr ? String(v.obs_abbr).toUpperCase() : null,
+      colorCode: v.color_code || null,
+      alertLevel: v.alert_level || null,
+      sentUtc: v.sent_utc ? String(v.sent_utc).replace(" ", "T") + "Z" : null,
+      noticeUrl: v.notice_url || null,
+    }));
+}
+
 function parseGvpRss(xmlText) {
   if (!xmlText || typeof xmlText !== "string") return [];
   const items = [];
@@ -619,6 +648,7 @@ function stripInvalidRefs(briefing, referencePool) {
 
 async function runEarthIngest(env) {
   const warnings = [];
+  const notices = []; // degraded-but-expected conditions: recorded, never alerted
 
   // Single KV read, reused by every carry-forward path below (quakes,
   // NMSZ, Yellowstone, GVP) - previously this was fetched twice
@@ -746,8 +776,22 @@ async function runEarthIngest(env) {
       };
     }
   } catch (err) {
-    warnings.push("GVP RSS fetch failed (carrying forward previous data): " + err.message);
     if (existing && existing.volcanoes) volcanoes = existing.volcanoes;
+    const cachedAt = volcanoes && volcanoes.fetchedAt ? new Date(volcanoes.fetchedAt).getTime() : 0;
+    const ageDays = cachedAt ? Math.round((Date.now() - cachedAt) / 864e5) : null;
+    const msg = "GVP RSS fetch failed (carrying forward previous data" + (ageDays !== null ? ", " + ageDays + "d old" : "") + "): " + err.message;
+    if (cachedAt && Date.now() - cachedAt <= GVP_STALE_ALERT_MS) notices.push(msg);
+    else warnings.push(msg);
+  }
+
+  // ---- best-effort source: USGS HANS elevated US volcanoes (2026-10-09) ----
+  let usVolcanoAlerts = (existing && existing.usVolcanoAlerts) || { fetchedAt: null, alerts: [] };
+  try {
+    const res = await fetchWithTimeout(HANS_ELEVATED_URL, 8000);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    usVolcanoAlerts = { fetchedAt: new Date().toISOString(), alerts: parseHansElevated(await res.json()) };
+  } catch (err) {
+    notices.push("USGS HANS elevated-volcano fetch failed (carrying forward): " + err.message);
   }
 
   // ---- best-effort source: ocean/atmosphere/geography news (2026-07-30) ----
@@ -866,7 +910,7 @@ async function runEarthIngest(env) {
   }
 
   const payload = {
-    meta: { generatedAt: new Date().toISOString(), warnings },
+    meta: { generatedAt: new Date().toISOString(), warnings, notices },
     pulse,
     briefing,
     nmsz: nmszStatus,
@@ -874,6 +918,7 @@ async function runEarthIngest(env) {
     quakes: { significant: significantQuakes, count: significantQuakes.length },
     surfaceEvents: { wildfires, storms, ice, excludedPrescribedFires },
     volcanoes,
+    usVolcanoAlerts,
     news,
     whyItMatters,
   };
@@ -890,6 +935,7 @@ export {
   parseUSGSFeatureCollection,
   parseEonetEvents,
   parseGvpRss,
+  parseHansElevated,
   parseRssItems,
   stripCdata,
   fetchNewsFeeds,
