@@ -95,6 +95,23 @@ const GVP_STALE_ALERT_MS = 14 * 24 * 3600 * 1000;
 // 2026-10-09: USGS Volcano Hazards Program public notices (HANS): every US
 // volcano currently above normal (color code / alert level). Free, no key.
 // Supplements GVP for US volcanoes only; GVP stays the global source.
+// 2026-10-10: Cloudflare egress is blocked by IP (403 even with full browser
+// headers), so Supabase Postgres fetches the RSS every 3h (pg_cron job
+// gvp-rss-refresh -> public.gvp_rss_cache) and this reads that copy first.
+// Read-only anon access via PostgREST; falls back to the direct fetch.
+async function fetchGvpFromSupabase(env) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return { ok: false, reason: "no Supabase config" };
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/gvp_rss_cache?id=eq.1&select=body,fetched_at,last_status`, {
+    headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) return { ok: false, reason: "Supabase HTTP " + res.status };
+  const rows = await res.json();
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row || !row.body || !row.fetched_at) return { ok: false, reason: "Supabase copy empty (last_status " + (row && row.last_status) + ")" };
+  return { ok: true, text: row.body, fetchedAt: new Date(row.fetched_at).toISOString() };
+}
+
 const HANS_ELEVATED_URL = "https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes";
 
 // EONET result-set caps (2026-08-26, added alongside the days=2 removal
@@ -764,16 +781,30 @@ async function runEarthIngest(env) {
     if (!isStale && existing && existing.volcanoes) {
       volcanoes = existing.volcanoes; // carry forward, no network call spent
     } else {
-      const result = await fetchGvpRssText("https://volcano.si.edu/news/WeeklyVolcanoRSS.xml", 10000);
-      if (!result.ok) throw new Error("GVP RSS returned " + result.status);
+      let result = null, sourceFetchedAt = null, viaNote = "";
+      try {
+        const sb = await fetchGvpFromSupabase(env);
+        if (sb.ok) { result = { ok: true, text: sb.text }; sourceFetchedAt = sb.fetchedAt; }
+        else viaNote = " (Supabase copy: " + sb.reason + ")";
+      } catch (e) {
+        viaNote = " (Supabase copy: " + e.message + ")";
+      }
+      if (!result) {
+        result = await fetchGvpRssText("https://volcano.si.edu/news/WeeklyVolcanoRSS.xml", 10000);
+        if (!result.ok) throw new Error("GVP RSS returned " + result.status + viaNote);
+      }
       const entries = parseGvpRss(result.text);
       const reportWeekOf = entries.length && entries[0].reportWeekOf ? entries[0].reportWeekOf : null;
       volcanoes = {
         reportWeekOf,
         entries: entries.map(({ reportWeekOf, ...rest }) => rest), // don't repeat the same week string on every entry
-        fetchedAt: new Date().toISOString(),
+        fetchedAt: sourceFetchedAt || new Date().toISOString(),
+        source: sourceFetchedAt ? "supabase-cache" : "direct",
         schemaVersion: GVP_SCHEMA_VERSION,
       };
+      if (sourceFetchedAt && Date.now() - Date.parse(sourceFetchedAt) > GVP_STALE_ALERT_MS) {
+        warnings.push("GVP Supabase copy is " + Math.round((Date.now() - Date.parse(sourceFetchedAt)) / 864e5) + "d old: check pg_cron job gvp-rss-refresh");
+      }
     }
   } catch (err) {
     if (existing && existing.volcanoes) volcanoes = existing.volcanoes;
@@ -936,6 +967,7 @@ export {
   parseEonetEvents,
   parseGvpRss,
   parseHansElevated,
+  fetchGvpFromSupabase,
   parseRssItems,
   stripCdata,
   fetchNewsFeeds,
