@@ -595,17 +595,26 @@ async function callIntelligence(env, counts, items, referencePool) {
     model: "claude-haiku-5-5",
     max_tokens: 3900,
     system: [{ type: "text", text: INTELLIGENCE_SYSTEM, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: buildIntelligenceUserPrompt(counts, items, referencePool || []) }],
+    // 2026-10-11: strip U+FFFD replacement characters (from the windows-1252
+    // GVP copy cached via Supabase pg_net) before they reach the prompt; the
+    // first run that fed them in got a 403 "Request not allowed".
+    messages: [{ role: "user", content: buildIntelligenceUserPrompt(counts, items, referencePool || []).replace(/\uFFFD/g, "") }],
   };
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
+  // 2026-10-11: one retry after 3s on 403/429/5xx before giving up.
+  let res;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.ok || attempt === 2 || !(res.status === 403 || res.status === 429 || res.status >= 500)) break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
   if (!res.ok) {
     const bodyText = await res.text();
     return { briefing: null, whyItMatters: {}, error: "Anthropic API returned " + res.status + ": " + bodyText.slice(0, 300) };

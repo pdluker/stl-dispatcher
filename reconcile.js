@@ -396,7 +396,7 @@ const SCHEDULED_OUTPUTS = [
   { job: "podcast:feed", feed: "https://pokepod.stluker.com/feed.xml", at: [9, 0], on: (d) => d.getUTCDate() === 1 },               // 0 9 1 * *
   { job: "innovation-daily:feed", feed: "https://innovation.stluker.com/feed.xml", at: [11, 0], on: (d) => d.getUTCDay() === 2 }, // TUE
   { job: "bigbuilds:feed", feed: "https://builds.stluker.com/feed.xml", at: [13, 0], on: (d) => d.getUTCDay() === 4 },                 // THU
-  { job: "mech-match:feed", feed: "https://mech-match.pdluker.workers.dev/feed.xml", at: [12, 0], on: (d) => d.getUTCDay() === 1 },   // MON
+  { job: "mech-match:feed", feed: "https://mechmatch.stluker.com/feed.xml", at: [12, 0], on: (d) => d.getUTCDay() === 1 },   // MON
   { job: "rails-beneath-us:feed", feed: "https://rails.stluker.com/feed.xml", at: [11, 0], on: (d) => d.getUTCDay() === 3 }, // WED
   { job: "civicsignal:brief", heartbeat: "civicsignal:brief", at: [11, 0], on: (d) => d.getUTCDay() >= 1 && d.getUTCDay() <= 5 },  // MON-FRI
 ];
