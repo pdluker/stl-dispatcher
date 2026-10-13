@@ -150,6 +150,21 @@ async function fetchWithTimeout(url, timeoutMs) {
   }
 }
 
+// 2026-10-13: the USGS FDSN bbox queries aborted at 8s and EONET returned 429 on
+// the Oct 12-13 runs. One retry after a short pause, with a longer timeout,
+// for transient cases only (abort or network error, HTTP 429, HTTP 5xx).
+// Never loops: a second failure is reported by the caller as before.
+async function fetchWithRetry(url, timeoutMs) {
+  try {
+    const res = await fetchWithTimeout(url, timeoutMs);
+    if (res.status !== 429 && res.status < 500) return res;
+  } catch (err) {
+    // fall through to the single retry
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  return fetchWithTimeout(url, (timeoutMs || 8000) + 7000);
+}
+
 // GVP's RSS feed is served as Windows-1252, not UTF-8 (confirmed via a live
 // test run on 2026-07-23 — decoding it as UTF-8 corrupted every accented
 // character and smart quote into U+FFFD / mojibake). Decode explicitly
@@ -438,7 +453,7 @@ async function fetchBboxQuakes(bbox) {
     "&maxlongitude=" + bbox.maxlongitude +
     "&orderby=magnitude" +
     "&limit=" + BBOX_EVENT_LIMIT;
-  const res = await fetchWithTimeout(url);
+  const res = await fetchWithRetry(url);
   if (!res.ok) throw new Error("USGS FDSN bbox query returned " + res.status);
   return parseUSGSFeatureCollection(await res.json());
 }
@@ -750,7 +765,7 @@ async function runEarthIngest(env) {
   let stormsTotal = 0, iceTotal = 0;
   let eonetFailed = false;
   try {
-    const res = await fetchWithTimeout(
+    const res = await fetchWithRetry(
       "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=" + EONET_FETCH_LIMIT
     );
     if (!res.ok) throw new Error("EONET returned " + res.status);
