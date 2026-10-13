@@ -8,3 +8,4 @@ node_modules/
 
 # Claude Code plugin data (local SQLite), not source
 .claude/data/
+status-data-*.json
