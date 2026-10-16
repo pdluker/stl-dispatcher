@@ -516,7 +516,7 @@ export async function reconcile(env, data) {
     // real /trigger?includeWeekly=true call (episodeId 2026-09-08).
     { worker: "stl-dispatcher", expected: "40 11 * * FRI" },         // stl-weekly refresh (was MON until 2026-10-09)
     { worker: "stl-dispatcher", expected: "45 11 * * *" },           // aiIngest (ai.stluker.com) -- ADDED 2026-10-04
-    { worker: "stl-dispatcher", expected: "50 11 * * MON,THU" },     // aiPodcast (AI Daily Recap) -- ADDED 2026-10-04
+    { worker: "stl-dispatcher", expected: "50 11 * * MON,WED,FRI" }, // aiPodcast (AI Daily Recap) + newsletter roundup, M/W/F -- ADDED 2026-10-04, Mon/Thu until 2026-10-16
     // stl-sports intentionally omitted until its expression is confirmed (T-10)
     //
     // ADDED 2026-09-01: rails-beneath-us runs its OWN native cron, confirmed
@@ -634,7 +634,7 @@ export async function reconcile(env, data) {
     { job: "stl-weekly:refresh", maxAgeHours: 24 * 8 },
     // ADDED 2026-10-04 together with the tasks themselves, not after the first outage.
     { job: "stl-dispatcher:ai-ingest", maxAgeHours: 20 },      // daily 11:45
-    { job: "stl-dispatcher:ai-podcast", maxAgeHours: 24 * 5 }, // Mon/Thu; Thu->Mon is 96h + grace
+    { job: "stl-dispatcher:ai-podcast", maxAgeHours: 24 * 4 }, // M/W/F; longest gap Fri->Mon 72h + grace
   ];
 
   const findings = [

@@ -70,9 +70,10 @@
  *                         Sunday's already-refreshed music/sports data)
  *   45 11 * * *           aiIngest — daily AI edition for ai.stluker.com
  *                         (added 2026-10-04, ai-ingest.js)
- *   50 11 * * MON,THU     aiPodcast — "AI Daily Recap" in Paul's cloned
- *                         voice, covering editions since the last episode
- *                         (added 2026-10-04, ai-podcast.js)
+ *   50 11 * * MON,WED,FRI aiPodcast — "AI Daily Recap" in Paul's cloned
+ *                         voice, covering editions since the last episode,
+ *                         then the AI Daily newsletter roundup (added
+ *                         2026-10-04, ai-podcast.js; M/W/F since 2026-10-16)
  *   55 11 * * *           statusSync (reconcile + alert email) — daily, after
  *                         every ingest above so it judges TODAY's runs
  *                         (moved from 11:00 on 2026-09-28)
@@ -195,7 +196,7 @@ export default {
         sportsRefresh: evaluateHeartbeat(sportsHb, 24 * 8),
         weeklyRefresh: evaluateHeartbeat(weeklyHb, 24 * 8), // 8-day tolerance = one missed week before flagging stale
         aiIngest: evaluateHeartbeat(aiHb, 30),
-        aiPodcast: evaluateHeartbeat(aiPodHb, 24 * 5), // Mon/Thu; longest gap Thu->Mon (96h) + grace
+        aiPodcast: evaluateHeartbeat(aiPodHb, 24 * 4), // M/W/F; longest gap Fri->Mon (72h) + grace
       });
     }
 
@@ -319,7 +320,7 @@ export default {
       case '45 11 * * *':
         ctx.waitUntil(runAiOnly(env, { force: false }));
         return;
-      case '50 11 * * MON,THU':
+      case '50 11 * * MON,WED,FRI':
         ctx.waitUntil(runAiPodOnly(env, { force: false }));
         return;
       default:
@@ -620,33 +621,8 @@ async function runAiOnly(env, { force = false } = {}) {
         day: result.day, skipped: result.skipped || null, stories: result.stories || null, candidates: result.candidates || null,
       });
       try { await env.STATUS_KV.delete('ai:last-error'); } catch { /* non-fatal */ }
-      // ADDED 2026-10-16: mail the new edition to newsletter subscribers.
-      // The newsletter shipped on ai-daily 2026-10-10 expecting this call
-      // (see ai-daily/README.md), but it was never written, so no edition
-      // was ever mailed. ai-daily dedupes per day (ai:news:sent:<day>), so a
-      // forced re-run of the edition can't double-send. A failed send never
-      // fails the edition; it's recorded in STATUS_KV ainews:last-error.
-      if (!result.skipped) {
-        try {
-          if (!env.NEWSLETTER_SEND_TOKEN) throw new Error('NEWSLETTER_SEND_TOKEN not bound');
-          const res = await fetch(`https://ai.stluker.com/newsletter/send?day=${result.day}`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${env.NEWSLETTER_SEND_TOKEN}`,
-              // same as fetch-source.js INTERNAL_UA: passes zone bot protection
-              'User-Agent': 'stl-dispatcher/1.0 (+https://stluker.com; internal service call)',
-            },
-          });
-          const body = await res.json().catch(() => ({}));
-          result.newsletter = { status: res.status, ...body };
-          if (!res.ok) throw new Error(`newsletter/send HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
-          try { await env.STATUS_KV.delete('ainews:last-error'); } catch { /* non-fatal */ }
-        } catch (e) {
-          console.error('[stl-dispatcher] ai newsletter send failed:', e);
-          result.newsletter = result.newsletter || { error: String(e) };
-          await recordTaskError(env, 'ainews:last-error', { error: String(e), day: result.day, source: 'ai-newsletter' });
-        }
-      }
+      // CHANGED 2026-10-16: the daily edition is web-only. The newsletter now
+      // goes out Mon/Wed/Fri from runAiPodOnly() as a roundup (sendAiNewsletter).
     } else {
       console.error('[stl-dispatcher] ai ingest returned ok:false:', result.error);
       await recordTaskError(env, 'ai:last-error', { error: result.error, diagnostics: result.diagnostics || null, day: result.day, source: 'ai-ok-false' });
@@ -659,8 +635,40 @@ async function runAiOnly(env, { force = false } = {}) {
   }
 }
 
-// ── AI Daily Recap podcast — Mon/Thu, own cron. ADDED 2026-10-04 ───────────
+// ── AI Daily newsletter — Mon/Wed/Fri roundup, sent by runAiPodOnly() ──────
+// Moved here 2026-10-16 from runAiOnly() (the daily edition is web-only now).
+// ai-daily builds the roundup (episode's covered editions, or every edition
+// since the last send) and dedupes per day (ai:news:sent:<day>), so a forced
+// re-run can't double-send. A failed send never throws; it's recorded in
+// STATUS_KV ainews:last-error.
+async function sendAiNewsletter(env, day) {
+  try {
+    if (!env.NEWSLETTER_SEND_TOKEN) throw new Error('NEWSLETTER_SEND_TOKEN not bound');
+    const res = await fetch(`https://ai.stluker.com/newsletter/send?day=${day}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.NEWSLETTER_SEND_TOKEN}`,
+        // same as fetch-source.js INTERNAL_UA: passes zone bot protection
+        'User-Agent': 'stl-dispatcher/1.0 (+https://stluker.com; internal service call)',
+      },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`newsletter/send HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
+    try { await env.STATUS_KV.delete('ainews:last-error'); } catch { /* non-fatal */ }
+    return { status: res.status, ...body };
+  } catch (e) {
+    console.error('[stl-dispatcher] ai newsletter send failed:', e);
+    await recordTaskError(env, 'ainews:last-error', { error: String(e), day, source: 'ai-newsletter' });
+    return { error: String(e) };
+  }
+}
+
+// ── AI Daily Recap podcast — Mon/Wed/Fri, own cron. ADDED 2026-10-04 ───────
+// CHANGED 2026-10-16: after the episode attempt (success, skip, or error --
+// including a TTS failure) the Mon/Wed/Fri newsletter is sent. Dry runs never
+// send.
 async function runAiPodOnly(env, { force = false, dryRun = false } = {}) {
+  let result;
   try {
     const needed = dryRun ? ['ANTHROPIC_API_KEY'] : ['ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_AI_VOICE_ID'];
     for (const k of needed) {
@@ -668,8 +676,8 @@ async function runAiPodOnly(env, { force = false, dryRun = false } = {}) {
     }
     if (!env.PODCAST_KV) throw new Error('PODCAST_KV not bound');
     if (!env.POD_BUCKET) throw new Error('POD_BUCKET not bound');
-    const result = await runAiPodcast(env, { force, dryRun });
-    if (dryRun) return result; // no heartbeat: nothing was published
+    result = await runAiPodcast(env, { force, dryRun });
+    if (dryRun) return result; // no heartbeat, no email: nothing was published
     if (result.ok) {
       await recordHeartbeat(env.STATUS_KV, 'stl-dispatcher:ai-podcast', {
         day: result.day, skipped: result.skipped || null, episodeId: result.episode?.id || null, credits: result.episode?.credits || null,
@@ -678,12 +686,14 @@ async function runAiPodOnly(env, { force = false, dryRun = false } = {}) {
     } else {
       await recordTaskError(env, 'aipod:last-error', { error: result.error, diagnostics: result.diagnostics || null, day: result.day, source: 'aipod-ok-false' });
     }
-    return result;
   } catch (e) {
     console.error('[stl-dispatcher] ai podcast failed:', e);
     await recordTaskError(env, 'aipod:last-error', { error: String(e), stack: e?.stack || null, wasForced: force, source: 'aipod-exception' });
-    return { ran: true, ok: false, error: String(e) };
+    result = { ran: true, ok: false, error: String(e) };
   }
+  // Outside the try: a failed episode (e.g. TTS) must not stop the email.
+  result.newsletter = await sendAiNewsletter(env, new Date().toISOString().slice(0, 10));
+  return result;
 }
 
 // ── music + sports pulse — Sunday only, own cron now ──────────────────────

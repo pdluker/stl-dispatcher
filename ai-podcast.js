@@ -1,11 +1,14 @@
 // ai-podcast.js
-// Task 12 for stl-dispatcher -- "AI Daily Recap", the Mon/Thu ~5 minute
-// episode in Paul's own (cloned) voice. ADDED 2026-10-04.
+// Task 12 for stl-dispatcher -- "AI Daily Recap", the Mon/Wed/Fri ~4 minute
+// episode in Paul's own (cloned) voice. ADDED 2026-10-04; Mon/Thu until
+// 2026-10-16, when it moved to M/W/F with the newsletter roundup.
 //
-//   cron 50 11 * * MON,THU  (5 min after the :45 aiIngest, before :55 statusSync)
+//   cron 50 11 * * MON,WED,FRI  (5 min after the :45 aiIngest, before :55 statusSync)
 //     |- reads ai:day:* editions not yet covered by a previous episode
-//     |    Mon episode -> Fri/Sat/Sun/Mon editions (news Thu..Sun)
-//     |    Thu episode -> Tue/Wed/Thu editions     (news Mon..Wed)
+//     |    Mon episode -> Sat/Sun/Mon editions (news Fri..Sun)
+//     |    Wed episode -> Tue/Wed editions     (news Mon..Tue)
+//     |    Fri episode -> Thu/Fri editions     (news Wed..Thu)
+//     |- also writes newsletterLede for the ai-daily email roundup
 //     |- 1x Claude call -> JSON beats (coldOpen, body, watch, title, blurb)
 //     |- lint (numbers vs source, banned phrases, outlet cap, length)
 //     |    -> at most ONE revise pass, never a loop (FIRE-INTEL rule)
@@ -64,10 +67,10 @@ const FIRST_PARTY_SOURCES = new Set(AI_FEEDS.filter((f) => f.firstParty).map((f)
 const TTS_MODEL = 'eleven_flash_v2_5';
 const CREDITS_PER_CHAR = 0.5;
 const VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.8, speed: 1 };
-const TARGET_WORDS = 720; // ~5:00 at a natural ~145 wpm, ident + closeout included
+const TARGET_WORDS = 600; // was 720 until 2026-10-16; ident + closeout included
 const MIN_WORDS = 600;
-const SHORT_FLOOR = 500; // lint only flags below this; see lintScript() note
-const MAX_WORDS = 840;
+const SHORT_FLOOR = 420; // lint only flags below this; see lintScript() note
+const MAX_WORDS = 700;
 const MAX_EDITIONS = 5;
 const MANIFEST_CAP = 300;
 const MAX_NAMED_OUTLETS = 2;
@@ -94,7 +97,7 @@ const CLOSEOUTS = [
 ];
 
 // ── the prompt ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You write "${SHOW.title}", a five-minute AI news recap that comes out every Monday and Thursday. It is read aloud in ${SHOW.host}'s own cloned voice. Paul works in IT at a large government contractor, uses these tools, and reads AI news obsessively so his listeners don't have to. Listeners are smart and busy: they use AI at work or follow it closely, and they subscribed because they want the few things that actually mattered since the last episode, from a person with a point of view, without the hype.
+const SYSTEM_PROMPT = `You write "${SHOW.title}", a five-minute AI news recap that comes out every Monday, Wednesday and Friday. It is read aloud in ${SHOW.host}'s own cloned voice. Paul works in IT at a large government contractor, uses these tools, and reads AI news obsessively so his listeners don't have to. Listeners are smart and busy: they use AI at work or follow it closely, and they subscribed because they want the few things that actually mattered since the last episode, from a person with a point of view, without the hype.
 
 You are given several days of the AI Daily edition from ai.stluker.com (each with a date, lede, and stories with category, importance, summary, a "why it matters" note, and the outlets that covered it), plus the script of the previous episode.
 
@@ -104,7 +107,7 @@ The ident ("I'm Paul Luker, and this is ${SHOW.title} for <date>.") and the clos
 
 1. coldOpen (25-50 words). The hook. Start inside the most interesting thing that happened, with a concrete detail, as if continuing a conversation. Not a summary of the episode, not "this week in AI", not a question. It must make someone keep listening past the first 15 seconds.
 
-2. body (about 520-600 words). The heart of it.
+2. body (about 420-480 words). The heart of it.
    STEP ONE, before writing: find the organizing idea. Across these days, what is the actual story of the stretch? A shift, a tension, a pattern, a contradiction ("everyone shipped agents; nobody shipped a way to check their work"). Choose stories by that idea, not by importance score alone. If nothing honestly connects, don't force it: say so in organizingIdea and let the episode be a cleaner list.
    THE LEAD (about 40% of the body): the one story that matters most, done properly. What happened. What the easy read is. What it actually changes, and what it does not tell us yet. What Paul thinks. Reason out loud.
    TWO OR THREE MORE STORIES: real treatment, but uneven. One gets four sentences, another gets two. Vary the shape so it never sounds like a list being read.
@@ -156,8 +159,10 @@ LENGTH: the whole episode (your pieces plus about 45 words of ident and closeout
 TITLE: max 70 characters, front-load the concrete subject people would search for, specific not clickbait ("OpenAI puts ads in ChatGPT, Google's bug bounty buckles"). No "Episode", no date, no show name.
 BLURB: 1-2 plain sentences for show notes naming the main stories.
 
+NEWSLETTER LEDE: 2-3 plain sentences opening the email roundup that goes out with this episode, naming what mattered most across these days. Written to be read, not heard. Same fact rules as everything above. No greeting, no sign-off, no "this week in AI", no show name.
+
 Return ONLY a JSON object:
-{"organizingIdea":"<5-15 words, or 'no strong connection found'>","title":"...","blurb":"...","coldOpen":"...","body":"...","watch":"..."}`;
+{"organizingIdea":"<5-15 words, or 'no strong connection found'>","title":"...","blurb":"...","coldOpen":"...","body":"...","watch":"...","newsletterLede":"..."}`;
 
 // ── helpers ────────────────────────────────────────────────────────────────
 function wordCount(s) { return String(s || '').trim().split(/\s+/).filter(Boolean).length; }
@@ -265,9 +270,13 @@ function spokenDate(day) {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
 }
 
+// M/W/F since 2026-10-16: Mon/Tue -> Wednesday, Wed/Thu -> Friday,
+// Fri/Sat/Sun -> Monday (UTC weekday, 0 = Sunday).
 function nextEpisodeDay(day) {
   const wd = new Date(`${day}T12:00:00Z`).getUTCDay();
-  return wd >= 1 && wd <= 3 ? 'Thursday' : 'Monday';
+  if (wd === 1 || wd === 2) return 'Wednesday';
+  if (wd === 3 || wd === 4) return 'Friday';
+  return 'Monday';
 }
 
 async function readJson(kv, key, fallback) {
@@ -319,7 +328,10 @@ function numberValues(text) {
 
 export function lintScript(parts, sourceText, outlets) {
   const issues = [];
-  const writer = [parts.coldOpen, parts.body, parts.watch].join('\n\n');
+  // newsletterLede is checked like everything else, but it isn't spoken, so
+  // the length check (6) counts only the spoken pieces.
+  const writer = [parts.coldOpen, parts.body, parts.watch, parts.newsletterLede].filter(Boolean).join('\n\n');
+  const spokenWriter = [parts.coldOpen, parts.body, parts.watch].join('\n\n');
   const lower = writer.toLowerCase();
 
   // 1. Every number the writer used must exist in the source material.
@@ -361,7 +373,7 @@ export function lintScript(parts, sourceText, outlets) {
   // speculation ("an ad inside the output, not next to it" -- contradicting
   // the source). FIRE-INTEL's rule: never pad to hit the target. A quiet
   // stretch can run ~4 minutes.
-  const words = wordCount(writer) + 45;
+  const words = wordCount(spokenWriter) + 45;
   if (words < SHORT_FLOOR) issues.push(`Too short: about ${words} words with ident and closeout. Target ${TARGET_WORDS}. Add depth to the lead story from the material, not new facts.`);
   if (words > MAX_WORDS) issues.push(`Too long: about ${words} words with ident and closeout. Target ${TARGET_WORDS}. Cut repetition and the weakest quick hit, not facts in the lead.`);
 
@@ -450,12 +462,12 @@ async function writeScript(env, today, editions, prevEpisode, prevCloseoutId, di
   try {
     const audit = await callClaude(env, {
       system: 'You are a fact checker for a spoken news script. You compare every factual claim in the script to the source material and fix only what the material does not support. You never touch opinions that are clearly framed as opinions about given facts, style, structure, or anything that is supported.',
-      user: `SOURCE MATERIAL:\n${digest}\n\nSCRIPT (JSON):\n${JSON.stringify({ coldOpen: parts.coldOpen, body: parts.body, watch: parts.watch })}\n\nFind every place where the script:\n- states a fact, number, name, mechanism, or premise not in the material\n- assigns an action to a more specific party than the material does (e.g. "one of [named products]" when the material says "one bot")\n- drops a hedge the material has (reportedly, apparently, appears, may, plans to, initially, testing)\n- upgrades a stage (test -> launch, plans -> did)\n- presents an inference as fact without "I think" style framing\n- contradicts the material or itself about how something works (e.g. says an ad appears "next to" an image, then "inside the output, not next to it")\n- states a general claim about users, markets, popularity, or history as fact ("one of the stickiest things people do", "used to need a person") that the material does not give; cut it or reframe it as an explicit opinion\n\nFix each with the smallest possible edit: restore the hedge, loosen the attribution, or cut the clause. Keep length, voice, and everything supported exactly as is.\n\nReturn ONLY JSON: {"changes":[{"before":"...","after":"...","why":"..."}],"coldOpen":"...","body":"...","watch":"..."}. If nothing needs fixing, return an empty changes array and the pieces unchanged.`,
+      user: `SOURCE MATERIAL:\n${digest}\n\nSCRIPT (JSON):\n${JSON.stringify({ coldOpen: parts.coldOpen, body: parts.body, watch: parts.watch, newsletterLede: parts.newsletterLede || '' })}\n\nFind every place where the script:\n- states a fact, number, name, mechanism, or premise not in the material\n- assigns an action to a more specific party than the material does (e.g. "one of [named products]" when the material says "one bot")\n- drops a hedge the material has (reportedly, apparently, appears, may, plans to, initially, testing)\n- upgrades a stage (test -> launch, plans -> did)\n- presents an inference as fact without "I think" style framing\n- contradicts the material or itself about how something works (e.g. says an ad appears "next to" an image, then "inside the output, not next to it")\n- states a general claim about users, markets, popularity, or history as fact ("one of the stickiest things people do", "used to need a person") that the material does not give; cut it or reframe it as an explicit opinion\n\nFix each with the smallest possible edit: restore the hedge, loosen the attribution, or cut the clause. Keep length, voice, and everything supported exactly as is.\n\nReturn ONLY JSON: {"changes":[{"before":"...","after":"...","why":"..."}],"coldOpen":"...","body":"...","watch":"...","newsletterLede":"..."}. If nothing needs fixing, return an empty changes array and the pieces unchanged.`,
     });
     const audited = parseJsonLoose(audit.text);
     const changes = Array.isArray(audited.changes) ? audited.changes : [];
     if (changes.length && audited.body) {
-      const next = { ...parts, coldOpen: audited.coldOpen || parts.coldOpen, body: audited.body, watch: audited.watch || parts.watch };
+      const next = { ...parts, coldOpen: audited.coldOpen || parts.coldOpen, body: audited.body, watch: audited.watch || parts.watch, newsletterLede: audited.newsletterLede || parts.newsletterLede };
       const relint = lintScript(next, sourceText, outlets);
       const kept = relint.issues.length <= lint.issues.length;
       if (kept) { parts = next; lint = relint; }
@@ -476,6 +488,7 @@ async function writeScript(env, today, editions, prevEpisode, prevCloseoutId, di
     title: String(parts.title || `${SHOW.title}: ${spokenDate(today)}`).slice(0, 100),
     blurb: String(parts.blurb || ''),
     organizingIdea: parts.organizingIdea || null,
+    newsletterLede: toSpeakable(String(parts.newsletterLede || '')) || null,
     script,
     spoken: toSpokenText(script),
     words: wordCount(script),
@@ -538,6 +551,7 @@ export async function runAiPodcast(env, { force = false, dryRun = false, now = n
     script: ep.script,
     words: ep.words,
     organizingIdea: ep.organizingIdea,
+    newsletterLede: ep.newsletterLede,
     closeoutId: ep.closeoutId,
     unresolvedIssues: ep.unresolvedIssues,
     covers: editions.map((e) => e.day),
