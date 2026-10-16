@@ -79,8 +79,9 @@ const MAX_NAMED_OUTLETS = 2;
 const DAILY_POD_CREDITS_PER_DAY = 2800;
 const SAFETY_CREDITS = 3000;
 // Used only if the subscription endpoint can't be read (e.g. the API key
-// lacks the user_read permission). Sized to ~9 episodes.
-const FALLBACK_MONTHLY_BUDGET = 19000;
+// lacks the user_read permission). Sized to ~13 M/W/F episodes x ~1,800
+// credits (~600 words); was 19000 for ~9 Mon/Thu episodes until 2026-10-16.
+const FALLBACK_MONTHLY_BUDGET = 24000;
 
 export const SHOW = {
   title: 'AI Daily Recap',

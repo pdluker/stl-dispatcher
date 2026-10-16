@@ -585,7 +585,7 @@ export async function reconcile(env, data) {
     "bigbuilds",        // untracked, purpose/status unconfirmed — verify before treating as permanently expected
     "trackers",         // trackers.stluker.com — river/grid/fires live trackers, own crons + D1 trackers-db. ADDED 2026-10-04; freshness via checkTrackersHealth()
     "insights",         // insights.stluker.com — analyses + Monday brief over trackers-db, own cron. ADDED 2026-10-04
-    "ai-daily",         // ai.stluker.com — daily AI edition + Mon/Thu AI Daily Recap podcast, fed by stl-dispatcher aiIngest/aiPodcast. ADDED 2026-10-04
+    "ai-daily",         // ai.stluker.com — daily AI edition (web) + Mon/Wed/Fri AI Daily Recap podcast and email roundup, fed by stl-dispatcher aiIngest/aiPodcast. ADDED 2026-10-04
     "stickers",         // stickers.stluker.com — IT sticker of the day, own cron + D1/R2. ADDED 2026-09-25; freshness via checkStickersHealth()
   ];
   const heartbeatJobs = [
