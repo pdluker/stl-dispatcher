@@ -147,7 +147,7 @@
                                // check, not by a human noticing a missing episode.
       "45 11 * * *",           // aiIngest -- daily AI edition for ai.stluker.com. ADDED 2026-10-04.
       "50 11 * * MON,WED,FRI", // aiPodcast -- "AI Daily Recap" + newsletter roundup, M/W/F (was Mon/Thu until 2026-10-16). ADDED 2026-10-04.
-                               // Must run after :45 so Mon/Thu episodes include that day's edition.
+                               // Must run after :45 so M/W/F episodes include that day's edition.
       "55 11 * * *"            // statusSync (reconcile + alerting) -- ADDED 2026-09-28.
                                // Was bundled into the 11:00 slot, which ran BEFORE
                                // every ingest and so always judged yesterday's runs.
