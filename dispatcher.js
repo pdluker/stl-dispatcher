@@ -620,6 +620,33 @@ async function runAiOnly(env, { force = false } = {}) {
         day: result.day, skipped: result.skipped || null, stories: result.stories || null, candidates: result.candidates || null,
       });
       try { await env.STATUS_KV.delete('ai:last-error'); } catch { /* non-fatal */ }
+      // ADDED 2026-10-16: mail the new edition to newsletter subscribers.
+      // The newsletter shipped on ai-daily 2026-10-10 expecting this call
+      // (see ai-daily/README.md), but it was never written, so no edition
+      // was ever mailed. ai-daily dedupes per day (ai:news:sent:<day>), so a
+      // forced re-run of the edition can't double-send. A failed send never
+      // fails the edition; it's recorded in STATUS_KV ainews:last-error.
+      if (!result.skipped) {
+        try {
+          if (!env.NEWSLETTER_SEND_TOKEN) throw new Error('NEWSLETTER_SEND_TOKEN not bound');
+          const res = await fetch(`https://ai.stluker.com/newsletter/send?day=${result.day}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${env.NEWSLETTER_SEND_TOKEN}`,
+              // same as fetch-source.js INTERNAL_UA: passes zone bot protection
+              'User-Agent': 'stl-dispatcher/1.0 (+https://stluker.com; internal service call)',
+            },
+          });
+          const body = await res.json().catch(() => ({}));
+          result.newsletter = { status: res.status, ...body };
+          if (!res.ok) throw new Error(`newsletter/send HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
+          try { await env.STATUS_KV.delete('ainews:last-error'); } catch { /* non-fatal */ }
+        } catch (e) {
+          console.error('[stl-dispatcher] ai newsletter send failed:', e);
+          result.newsletter = result.newsletter || { error: String(e) };
+          await recordTaskError(env, 'ainews:last-error', { error: String(e), day: result.day, source: 'ai-newsletter' });
+        }
+      }
     } else {
       console.error('[stl-dispatcher] ai ingest returned ok:false:', result.error);
       await recordTaskError(env, 'ai:last-error', { error: result.error, diagnostics: result.diagnostics || null, day: result.day, source: 'ai-ok-false' });
