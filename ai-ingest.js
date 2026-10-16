@@ -16,8 +16,8 @@
 // no REPLACE_AFTER_CREATE id to forget (Jul 23 intel placeholder failure).
 //
 // Edition dating: the edition run on UTC day D covers news from roughly the
-// preceding 30 hours, and is labeled D. The Mon/Thu recap episode
-// (ai-podcast.js) reads editions by these labels.
+// preceding 30 hours, and is labeled D. The Mon/Wed/Fri recap episode
+// (ai-podcast.js) and the ai-daily email roundup read editions by these labels.
 
 import { fetchSource, recordSourceResult } from './fetch-source.js';
 
