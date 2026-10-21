@@ -570,6 +570,13 @@ async function runPodcastOnly(env, { force = false } = {}) {
         skipped: result.skipped || null,
         episodeId: result.episode?.id || null,
         credits: result.episode?.credits || null,
+        // ADDED 2026-10-20: a skip (credit cap, thin sources) used to look
+        // exactly like a published episode here, so checkHeartbeats stayed
+        // green through the Oct 19-20 outage. Marking it degraded makes
+        // checkHeartbeats raise heartbeat_degraded (a warning, so it emails).
+        ...(result.skipped && result.skipped !== 'already-generated'
+          ? { quality: 'degraded', qualityReasons: [`no episode published: ${result.skipped}`] }
+          : {}),
       });
       try { await env.STATUS_KV.delete('podcast:last-error'); } catch { /* non-fatal */ }
     } else {

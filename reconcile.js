@@ -393,6 +393,12 @@ async function checkStickersHealth(env, now = new Date()) {
  * rails-beneath-us firing Sun/Tue/Thu until 2026-10-09.
  */
 const SCHEDULED_OUTPUTS = [
+  // ADDED 2026-10-20: Earth and Orbit itself. Its 11:30 run skipped Oct 19 and
+  // Oct 20 (internal credit cap) while still writing a healthy heartbeat, so
+  // only the feed shows a missing episode. Slot 11:00, not 11:30: this check
+  // runs at 11:55 and only looks at slots older than OUTPUT_GRACE_MIN (40 min),
+  // so an 11:30 slot would be judged a day late. Same reason rails uses 11:00.
+  { job: "pod:feed", feed: "https://pod.stluker.com/feed.xml", at: [11, 0], on: () => true },                                   // daily
   { job: "podcast:feed", feed: "https://pokepod.stluker.com/feed.xml", at: [9, 0], on: (d) => d.getUTCDate() === 1 },               // 0 9 1 * *
   { job: "innovation-daily:feed", feed: "https://innovation.stluker.com/feed.xml", at: [11, 0], on: (d) => d.getUTCDay() === 2 }, // TUE
   { job: "bigbuilds:feed", feed: "https://builds.stluker.com/feed.xml", at: [13, 0], on: (d) => d.getUTCDay() === 4 },                 // THU

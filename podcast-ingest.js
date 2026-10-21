@@ -36,7 +36,15 @@ const TARGET_WORDS = 400;
 // non-streaming; 16k is the documented safe ceiling for that.
 const MAX_SCRIPT_TOKENS = 16000;
 const MAX_SCRIPT_CHARS = 3200;
-const MONTHLY_CREDIT_BUDGET = 36000; // was 92000; see TARGET_WORDS
+// CHANGED 2026-10-20: 36000 -> 42000. At ~400 words an episode costs ~1,250
+// credits, so a 31-day month needs ~38,750; 36000 silently skipped the Oct 19
+// and Oct 20 episodes after the longer early-October ones used it up. When this
+// internal cap is hit, the run now asks ElevenLabs for the real account balance
+// (accountHasRoom) and only skips if the shared account is genuinely short.
+const MONTHLY_CREDIT_BUDGET = 42000; // was 36000 (Oct 9), 92000 before that
+// Credits that must stay on the shared ElevenLabs account for the other shows
+// before Earth and Orbit may run past its own monthly cap.
+const SHARED_ACCOUNT_RESERVE = 15000;
 const TTS_MODEL = "eleven_flash_v2_5";
 const CREDITS_PER_CHAR = 0.5;
 const VOICE_SETTINGS = { stability: 0.45, similarity_boost: 0.75, speed: 1 };
@@ -52,14 +60,26 @@ const STORIES_FROM_EARTH = 4;
 const SYSTEM_PROMPT = `You write a short daily audio briefing on space and earth science, listened to by one person on their morning drive. Warm, curious, personable. Someone who finds this stuff genuinely interesting talking to someone who also does.
 
 STRUCTURE
-1. The episode opens with a fixed welcome line stating today's date and the show's name and mission, supplied to you already prepended -- do not write your own greeting, do not restate the date, and do not re-introduce the show. Your opening picks up right after it: two or three sentences naming what today is actually about, the one thing that makes today different from yesterday. Warm but not chirpy. Do not repeat "welcome" or "today" as your first word -- the line before yours already did that work.
+1. The episode opens with a fixed welcome line stating today's date and the show's name and mission, supplied to you already prepended -- do not write your own greeting, do not restate the date, and do not re-introduce the show. Your first sentence picks up right after it and is already the lead story: its most important fact, stated plainly. Do not open by naming a theme or saying what the day is "about" ("Today is about...", "Tonight is about...", "Every story I picked has...", "Some things in the sky keep appointments..."). That opener is the single most recognisable machine-written tell this show has had, and it is checked and removed after generation. Let the organizing idea show through the order and the segues instead. Warm but not chirpy. Do not repeat "welcome" or "today" as your first word -- the line before yours already did that work.
 2. The stories. See SELECTION AND FLOW below - this is the part that most determines whether the episode sounds alive or like a list being read.
 3. The reflection. See its own section below.
+
+WHEN THIS IS HEARD
+The episode publishes at about 6:30 AM Central time and is heard that morning. Never call the present moment "tonight" or "this evening". For sky events and passes, give the Central-time clock time when one is supplied, and say "this evening" or "tonight" only for something that happens later today. Anything whose supplied time has already passed by 6:30 AM Central is not mentioned. If a sky event has no supplied time, do not invent one and do not imply one.
+
+THE LEAD
+Lead with the item that matters most to people right now - a strong storm near or passing a populated place, a damaging earthquake, an event with a time listeners can act on - even if it fits the organizing idea less well than a quieter story. A typhoon passing an island outranks a picture of a nebula. When an item carries a CHANGE SINCE YESTERDAY note, that change is usually the news: say it.
+
+EVERY STORY NEEDS SOMETHING CONCRETE
+Each story you keep must carry at least one concrete finding, number, or named person, place, mission or instrument from its source line. If the source only says a paper "looks at" or "examines" something with no result, or describes a project with no name, leave it out - a thinner episode beats a story with nothing in it. A picture-of-the-day item is not news: use it only as a brief aside, never as one of the main stories.
 
 SELECTION AND FLOW - read this section twice, it's the one that matters most
 You will be handed 5-7 candidate stories, mixed together, not grouped by topic. You do not have to use all of them.
 
 STEP ONE - find the organizing idea BEFORE you choose anything. Scan all the candidates for one thing that connects three or more of them: a mechanism, a place, a tension, an escalation, a contradiction, a before-and-after. This is not decoration you add at the end - it is the reason you're choosing these stories over the others. If nothing genuinely connects three or more stories, pick the two that connect most strongly and let the rest be a single plain aside, not a forced member of the theme.
+
+THE ORGANIZING IDEA MUST BE CONCRETE, NOT AN ABSTRACT LABEL
+"Infrastructure," "connection," "change," "scale," "translation," "distance," "appointments" and words like them are categories, not ideas - a category can technically span any four stories, which is exactly why it's not a real connection. A real organizing idea names a specific mechanism, place, timescale, or fact ("a controlled crash to protect a moon nobody's proven has anything alive on it" is an idea; "infrastructure" is not). Once you have a real one, do not restate its label across multiple paragraphs - if you notice yourself opening three different stories with the same noun, that noun is carrying weight the material itself should be carrying.
 
 AVOIDING A REPEATED FRAME - part of STEP ONE, not a separate step
 Below the source material you'll find a short list of the organizing ideas used in recent episodes. Check today's instinct against that list before committing to it. If your first idea is the same kind of frame as a recent one - even reworded, even with entirely different facts plugged in - that is not a fresh angle, it's the same essay again with new names in it.
@@ -75,6 +95,8 @@ STEP TWO - choose 3 to 5 stories using that idea as the filter, not "which are i
 STEP THREE - let the organizing idea show up early, not just in the reflection. The opening line or the first segue should already be operating on it, even if you don't name it outright yet. If the listener only learns why these stories belong together in the closing line, the middle of the episode already read as disconnected while they were listening to it - the reflection is a place to land the idea, not the first place you reveal it.
 
 Order the stories by what they share, not by which pipeline they came from. A segue is not a sentence that mentions both stories. It's a sentence where the second story is already implied by how you ended the first one. If you have to write "meanwhile," "also," "in addition," "elsewhere," or "speaking of," stop - that word is doing the work your sentence structure should be doing. Delete the connector and rewrite the boundary between the two stories so it doesn't need one. This is checked after generation - a script full of these connector words reads as a failure of this instruction, not a stylistic choice.
+
+The same failure has a second disguise: "not X, but Y," "that's different because...," "it's the opposite of...," "across a much different scale..." do the identical signposting job as "meanwhile" while dodging the word list above. One genuine contrast, stated once, earns its place. A contrast sentence at every transition is the tell, regardless of which words it uses. This is checked after generation.
 
 CROSSING BETWEEN EARTH AND SPACE
 The moment you move from an earth story to a space story, or back again, is a harder version of the segue problem above, and it fails differently. Two earth stories, or two space stories, usually share something on the surface - a mechanism, a place, a scale - so the segue above is enough. Earth and space material often doesn't share anything obvious, and the default failure is to finish the last earth thought and then cold-start the space story with its own attribution ("Space.com reported that...") as if it were the opening of a new segment. That seam is audible, and it's the single most common way an otherwise good episode reads as two briefings stapled together instead of one.
@@ -103,6 +125,10 @@ Plain and specific. Short sentences next to long ones. Comfortable being interes
 
 Every story needs a reaction, not just a report. "Etna doesn't wait for anyone to be watching, it just goes" is the target: a plain, specific aside that shows you actually thought something about the fact, not just relayed it. This is different from the reflection at the end - it's small, local to that one story, and it happens as you go rather than being saved up. A story with only setup and fact, no reaction anywhere in it, is unfinished, even if every fact in it is accurate. The reaction can be dry, skeptical, curious, or just a plain observation - it does not need to be positive or awed.
 
+Avoid stacking three short parallel fragments in a row for emphasis ("Still working. Still gathering data. Still capable of more.") - one real sentence does what the drumroll is trying to do.
+
+First-person verdicts ("I like that...", "I'd rather...", "I find...", "that's fine") are allowed at most once per episode, reflection included. The second one is a verbal tic, not a reaction. This is checked after generation.
+
 This is also where "why it matters" belongs, and it needs to land as a real point, not a formality. When the source material hands you a why-it-matters framing, use it to say something specific about what changes or what it's evidence of - not "and this is important because it helps us understand X" as a stock closing clause. If the source material doesn't give you a why-it-matters and you can't honestly generate one from what's actually there, don't manufacture one - a story can stand on being specific and interesting without a stated stakes claim, but it should never get a vague, interchangeable one just to check the box.
 
 The "significance note" attached to some items is a note TO YOU, not script copy. Never read it aloud as written, and never paste it in after you've already made the same point in your own words - that produces the same idea twice in a row, the second time in a flatter voice, and listeners hear the seam. Say the point once, in your own words, or skip it. Copying runs of source wording is checked after generation.
@@ -113,7 +139,7 @@ NO FILLER FOR THE THEME. Every sentence has to say something about the story it'
 
 KEEP THE OPENING'S PROMISE. Whatever frame your opening names, the stories that follow have to actually use it. Don't open by promising a three-way split or a claim about "where human spaceflight is" and then drop it after the first story.
 
-LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs. When an item is marked "DATA IS FROM YESTERDAY" or "DATA IS N DAYS OLD", say so aloud in plain words ("as of yesterday's last update") - a day-old position for a strong storm is a different fact from a current one.
+LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs. Call a storm by the name exactly as supplied in its line: the code relabels storms from their current winds (a "hurricane" at 35 miles per hour is supplied as a tropical depression), so never upgrade one back from memory. When an item is marked "DATA IS FROM YESTERDAY" or "DATA IS N DAYS OLD", say so aloud in plain words ("as of yesterday's last update") - a day-old position for a strong storm is a different fact from a current one.
 
 HEDGES ARE FACTS. Qualifiers in the source - nearly, about, roughly, up to, at least, may, appears to, expected to - are part of the fact, not decoration. "Nearly full" stays "nearly full", never "full"; "may" never becomes "will". Dropping a hedge is changing a load-bearing fact. This is checked after generation.
 
@@ -161,7 +187,7 @@ If today's material doesn't hand you a genuinely different closing idea, don't f
 
 It must contain ZERO load-bearing facts. No numbers, no dates, no place names, no agency names, no measurements. Nothing that could be checked and found wrong. It reflects on what you already said; it does not add anything new about the world.
 
-What makes it work: it is grounded in one concrete thing from the briefing and stays with that one thing. A specific noticing, not a summary of all of it.
+What makes it work: it is grounded in one concrete thing from the briefing and stays with that one thing. A specific noticing, not a summary of all of it. If your reflection could be read as a recap of the episode - one clause per story - delete it and start over from a single detail. A reflection naming three or four of today's stories has drifted back into being a second stories section.
 
 This is a continuation of the organizing idea from STEP ONE above, not the first place you introduce it. If the listener has been following the throughline since the opening, the reflection should feel like the last turn of a thought already in motion. Avoid naming it flatly ("the theme running through this is X") - that tells the listener what to have noticed instead of trusting that they did. Extend the idea one step further instead of summarizing it.
 
@@ -212,7 +238,7 @@ DISASTER IMAGERY: if the most striking story is a disaster that harmed people, d
 
 OUTPUT
 Return ONLY a JSON object, no fences:
-{"script":"<opening and stories, no reflection>","reflection":"<the reflection, containing the supplied quotation verbatim>","imagePrompt":"<the cover image prompt>","organizingIdea":"<5-15 word description of today's actual connecting idea from STEP ONE, or 'no strong connection found' if that's honestly true>","claims":[{"text":"<load-bearing fact as stated>","sourceId":"<exact id it came from>"}]}
+{"script":"<opening and stories, no reflection>","reflection":"<the reflection, containing the supplied quotation verbatim>","imagePrompt":"<the cover image prompt>","organizingIdea":"<5-15 word description of today's actual connecting idea from STEP ONE, or 'no strong connection found' if that's honestly true>","episodeTitle":"<4-9 words naming the one or two lead stories, plain and specific, no date, no colon, no hype, no question>","showNotes":"<one or two plain sentences, under 280 characters, saying what today's episode covers, for a podcast app's description; no greeting, no hype>","claims":[{"text":"<load-bearing fact as stated>","sourceId":"<exact id it came from>"}]}
 Every load-bearing fact in the script gets a claims entry. If you cannot name the id a fact came from, the fact does not belong in the script.`;
 
 function toSpeakableAscii(text) {
@@ -382,6 +408,56 @@ function describeLocationByLandmark(lat, lon) {
   return `${miles} miles ${word} of ${nearest.name}`;
 }
 
+// ADDED 2026-10-20: EONET keeps a storm's peak label ("Hurricane Simon") after
+// it weakens. Relabel from the current wind so the script can't call a 35 mph
+// system a hurricane. Saffir-Simpson thresholds in mph: <39 depression,
+// 39-73 storm, 74+ keeps the basin's own word (hurricane/typhoon/cyclone).
+function relabelStorm(title, mph) {
+  if (typeof mph !== "number") return title;
+  const name = title.replace(/^(?:Super\s+)?(?:Hurricane|Typhoon|Tropical\s+(?:Storm|Depression|Cyclone)|Cyclone|Severe\s+Tropical\s+Storm)\s+/i, "").trim();
+  if (!name || name === title.trim()) return title; // no storm-type prefix to relabel
+  if (mph < 39) return `Tropical Depression ${name}`;
+  if (mph < 74) return `Tropical Storm ${name}`;
+  return title;
+}
+
+// ADDED 2026-10-20: compare today's storm fixes with yesterday's, in code, so
+// the model is handed the change as a fact instead of inferring it (Oct 17-18:
+// Champi went from 180 miles east of Guam to 170 west and the episode never
+// said it had passed Guam).
+function buildStormPositions(earth) {
+  const out = {};
+  for (const e of earth.events || []) {
+    if (e.kind === "storms" && typeof e.lat === "number" && typeof e.lon === "number") out[e.id] = { lat: e.lat, lon: e.lon, windMph: e.windMph ?? null };
+  }
+  return out;
+}
+function annotateStormChanges(earth, yesterdayPositions) {
+  if (!yesterdayPositions) return 0;
+  let n = 0;
+  for (const e of earth.events || []) {
+    const y = e.kind === "storms" ? yesterdayPositions[e.id] : null;
+    if (!y || typeof e.lat !== "number" || typeof e.lon !== "number") continue;
+    const parts = [];
+    const moved = haversineMiles(y.lat, y.lon, e.lat, e.lon);
+    if (moved >= 30) parts.push(`moved about ${moved >= 300 ? Math.round(moved / 50) * 50 : Math.round(moved / 10) * 10} miles since yesterday`);
+    if (typeof y.windMph === "number" && typeof e.windMph === "number" && y.windMph !== e.windMph) {
+      parts.push(`winds ${e.windMph > y.windMph ? "up" : "down"} from about ${y.windMph} to about ${e.windMph} miles per hour`);
+    }
+    let passed = null, best = Infinity;
+    for (const lm of LANDMARKS) {
+      const dY = haversineMiles(lm.lat, lm.lon, y.lat, y.lon), dT = haversineMiles(lm.lat, lm.lon, e.lat, e.lon);
+      if (dY > 600 || dT > 600 || moved < 100) continue;
+      let diff = Math.abs(bearingFrom(lm.lat, lm.lon, y.lat, y.lon) - bearingFrom(lm.lat, lm.lon, e.lat, e.lon));
+      if (diff > 180) diff = 360 - diff;
+      if (diff >= 100 && dY + dT < best) { best = dY + dT; passed = lm.name; }
+    }
+    if (passed) parts.push(`has passed ${passed} since yesterday`);
+    if (parts.length) { e.summary = `${e.summary}, CHANGE SINCE YESTERDAY (computed): ${parts.join("; ")}`; n++; }
+  }
+  return n;
+}
+
 function utcDayKey(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
@@ -527,6 +603,12 @@ async function readEarthBlob(ns, key) {
             const mph = Math.round((ev.magnitudeValue * 1.15078) / 5) * 5;
             facts.push(`maximum sustained winds about ${mph} miles per hour`);
           }
+          // ADDED 2026-10-20: a fix two or more days old is not news (Oct 18 read
+          // "Hurricane Simon ... treat that one as stale"); leave it out.
+          if (kind === "storms" && ev.date && !Number.isNaN(new Date(ev.date).getTime())) {
+            const ageDays = Math.round((Date.parse(utcDayKey()) - Date.parse(new Date(ev.date).toISOString().slice(0, 10))) / 86400000);
+            if (ageDays >= 2) continue;
+          }
           if (ev.date) {
             const d = new Date(ev.date);
             if (!Number.isNaN(d.getTime())) {
@@ -541,7 +623,12 @@ async function readEarthBlob(ns, key) {
             }
           }
         }
-        events.push({ id: ev.id, kind, title: ev.title || "", summary: facts.join(", "), whyItMatters: why[ev.id] || "" });
+        // ADDED 2026-10-20: storms carry position and wind so tomorrow's run can
+        // say what changed, and their label follows current strength.
+        const windMph = (typeof ev.magnitudeValue === "number" && /^kts?$/i.test(ev.magnitudeUnit || "")) ? Math.round((ev.magnitudeValue * 1.15078) / 5) * 5 : null;
+        const title = kind === "storms" ? relabelStorm(ev.title || "", windMph) : (ev.title || "");
+        events.push({ id: ev.id, kind, title, summary: facts.join(", "), whyItMatters: why[ev.id] || "",
+          ...(kind === "storms" ? { lat: typeof ev.lat === "number" ? ev.lat : null, lon: typeof ev.lon === "number" ? ev.lon : null, windMph } : {}) });
       }
     }
     for (const v of data.volcanoes?.entries || []) {
@@ -705,7 +792,7 @@ async function readYesterdayEpisode(env, day) {
     // legitimately stay eligible for up to 72h (INGEST_RECENCY_HOURS) with no
     // fresher coverage. Same fix as storms: deprioritize a confirmed-repeat,
     // don't treat it as a bug.
-    return { day: yKey, script: ep.script, stormFingerprint: ep.stormFingerprint || null, spaceFingerprint: ep.spaceFingerprint || null };
+    return { day: yKey, script: ep.script, stormFingerprint: ep.stormFingerprint || null, spaceFingerprint: ep.spaceFingerprint || null, stormPositions: ep.stormPositions || null };
   } catch {
     return null;
   }
@@ -830,14 +917,26 @@ function buildSourceDigest(space, earth,yesterday = null, staleEarthIds = null, 
   if (sky) {
     const bits = [];
     if (sky.moonPhase) bits.push(`moon phase ${toSpeakableAscii(sky.moonPhase)}`);
-    if (sky.issNextVisiblePass?.visible) {
-      const t = sky.issNextVisiblePass.riseTime;
-      const local = t ? new Date(t).toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" }) : "";
-      bits.push(`an ISS pass visible tonight from St. Louis around ${toSpeakableAscii(local)}`);
+    // CHANGED 2026-10-20: was "visible tonight ... around <rise time>" for
+    // whatever the next pass was, so Oct 16 said "visible tonight ... around
+    // 6:24 AM" for a pass that ended before the 6:31 AM publish. Now: the next
+    // visible pass that rises at least 15 minutes after the run, labelled with
+    // its real part of day and weekday in Central time.
+    const nowMs = Date.now();
+    const pass = (sky.issPasses || [sky.issNextVisiblePass]).find((p) => p && p.visible && p.riseTime && Date.parse(p.riseTime) > nowMs + 15 * 60000);
+    if (pass) {
+      const when = new Date(pass.riseTime);
+      const ct = (d, o) => d.toLocaleString("en-US", { timeZone: "America/Chicago", ...o });
+      const local = ct(when, { hour: "numeric", minute: "2-digit" });
+      const hour = Number(ct(when, { hour: "numeric", hourCycle: "h23" }));
+      const part = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+      const sameDay = ct(when, { dateStyle: "short" }) === ct(new Date(nowMs), { dateStyle: "short" });
+      const dayWord = sameDay ? `this ${part}` : `${ct(when, { weekday: "long" })} ${part}`;
+      bits.push(`an ISS pass visible from St. Louis ${dayWord} around ${toSpeakableAscii(local)} Central`);
     }
     if (bits.length) {
       lines.push("");
-      lines.push(`TONIGHT'S SKY id=tonights-sky (optional, use only if it fits the close): ${bits.join(", ")}.`);
+      lines.push(`ST. LOUIS SKY id=tonights-sky (optional; times are Central, and this episode is heard at about 6:30 AM): ${bits.join(", ")}.`);
     }
   }
   // ADDED 2026-08-23 (closing gap #1, continuity): yesterday's script,
@@ -909,6 +1008,26 @@ async function restoreQuote(env, reflection, quote, diagnostics) {
     diagnostics.push({ step: "quote-repair", ok: false, error: String(err.message || err).slice(0, 150) });
     return reflection;
   }
+}
+
+// ADDED 2026-10-20: the opener that names a theme ("Tonight is about
+// translation", "Some things in the sky keep appointments, and today's stories
+// are about the appointments"). Detected on the first two sentences only.
+const THEME_OPENER_RE = /\b(?:today|tonight|this morning)(?:'s)?\s+(?:is|was|are)\s+(?:all\s+|mostly\s+|really\s+|a day\s+)?about\b|\b(?:today'?s|tonight'?s)\s+(?:stories|thread|theme|throughline|through-line)\b[^.!?]*\b(?:is|are|about|runs?)\b|\bevery story (?:i|we) (?:picked|chose)\b|\bthe (?:thread|throughline|through-line) (?:running )?(?:through|here)\b|\bstories (?:today )?(?:are|keep circling back to) (?:all )?about\b/i;
+const FIRST_PERSON_VERDICT_RE = /\bI(?: like| love| liked| find| found|'d rather| would rather| prefer| appreciate)\b|\bthat's fine\b/gi;
+function leadingSentences(text, n) {
+  return (String(text || "").match(/[^.!?]+[.!?]+/g) || [String(text || "")]).slice(0, n).map((x) => x.trim());
+}
+// ADDED 2026-10-20: deterministic repair for "theme-opener": drop up to two
+// leading sentences that only announce the theme, so the episode starts on the
+// lead story. No model call; refuses if it would leave the stories too short.
+function stripThemeOpener(script) {
+  const sents = String(script).match(/[^.!?]+[.!?]+\s*/g) || [];
+  let drop = 0;
+  while (drop < 2 && drop < sents.length && THEME_OPENER_RE.test(sents[drop])) drop++;
+  if (!drop) return script;
+  const rest = sents.slice(drop).join("").trim();
+  return rest.split(/\s+/).length >= 220 ? rest : script;
 }
 
 function auditClaims(script, claims, validIds, sourceText, reflection = "", quote = null) {
@@ -1033,6 +1152,23 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
   if (/DATA IS (?:FROM YESTERDAY|\d+ DAYS OLD)/.test(sourceText) &&
       !/\byesterday\b|\bdays? old\b|\blast update\b|\bnot been updated\b|\bhasn't been updated\b|\bnot updated\b|\bday-old\b/i.test(script)) {
     flags.push({ type: "stale-data-unlabeled" });
+  }
+  // ADDED 2026-10-20: patch v2 (Sep 10 doc) and the Oct 16-18 review.
+  const ANTITHESIS_CRUTCHES = ["that's different because", "that's different from", "the opposite of", "the opposite way", "across a much different scale"];
+  const antithesisHits = ANTITHESIS_CRUTCHES.filter((p) => scriptLower.includes(p)).length;
+  if (antithesisHits > 1) flags.push({ type: "antithesis-crutch-overused", detail: `${antithesisHits} occurrences` });
+  if (THEME_OPENER_RE.test(leadingSentences(script, 2).join(" "))) flags.push({ type: "theme-opener", detail: leadingSentences(script, 1)[0].slice(0, 90) });
+  const verdicts = `${script} ${reflection || ""}`.match(FIRST_PERSON_VERDICT_RE) || [];
+  if (verdicts.length > 1) flags.push({ type: "first-person-verdicts", detail: `${verdicts.length}: ${[...new Set(verdicts.map((v) => v.toLowerCase()))].join(", ")}` });
+  for (const sent of script.match(/[^.!?]+[.!?]+/g) || []) {
+    if (/\b(?:tonight|this evening)\b/i.test(sent) && !/\d{1,2}:\d{2}|\b(?:a\.?m|p\.?m)\b/i.test(sent)) {
+      flags.push({ type: "time-of-day-unanchored", detail: sent.trim().slice(0, 90) });
+    }
+  }
+  if (reflection) {
+    const proper = new Set((script.match(/\b[A-Z][a-z]{3,}\b/g) || []).filter((w) => !/^(The|This|That|There|They|Then|When|What|With|From|Still|Some|Each|Every|Here|Today|Tonight)$/.test(w)));
+    const echoed = [...proper].filter((w) => reflection.includes(w));
+    if (echoed.length >= 3) flags.push({ type: "reflection-recap-candidate", detail: echoed.slice(0, 6).join(", ") });
   }
   const THEME_NAMING = ["the theme running through", "the through-line here", "the throughline here", "what connects all of this", "what ties these together", "the common thread here"];
   const reflectionLower = (reflection || "").toLowerCase();
@@ -1181,6 +1317,30 @@ async function readCreditLedger(kv) {
 }
 async function writeCreditLedger(kv, ledger) {
   await kv.put("podcast:credits", JSON.stringify(ledger));
+}
+
+// ADDED 2026-10-20: second opinion before a budget skip. The internal ledger
+// is a per-calendar-month guess; the account balance is the real constraint.
+// Fails closed (returns false, so the skip stands) if the API can't be read.
+async function accountHasRoom(env, need, diagnostics) {
+  try {
+    const res = await fetch("https://api.elevenlabs.io/v1/user/subscription", {
+      headers: { "xi-api-key": env.ELEVENLABS_API_KEY },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!res.ok) {
+      diagnostics.push({ step: "budget-account", ok: false, error: `HTTP ${res.status}` });
+      return false;
+    }
+    const sub = await res.json();
+    const remaining = Math.max(0, (sub.character_limit || 0) - (sub.character_count || 0));
+    const ok = remaining >= need + SHARED_ACCOUNT_RESERVE;
+    diagnostics.push({ step: "budget-account", ok, remaining, need, reserve: SHARED_ACCOUNT_RESERVE, note: ok ? "internal monthly cap exceeded, but the shared account has room; publishing" : "shared account below reserve; skip stands" });
+    return ok;
+  } catch (err) {
+    diagnostics.push({ step: "budget-account", ok: false, error: String(err.message || err).slice(0, 150) });
+    return false;
+  }
 }
 
 async function repairConnectorCrutches(env, script, flags, diagnostics) {
@@ -1417,6 +1577,8 @@ const SCRIPT_SCHEMA = {
     reflection: { type: "string" },
     imagePrompt: { type: "string" },
     organizingIdea: { type: "string" },
+    episodeTitle: { type: "string" },
+    showNotes: { type: "string" },
     claims: {
       type: "array",
       items: {
@@ -1427,7 +1589,7 @@ const SCRIPT_SCHEMA = {
       }
     }
   },
-  required: ["script", "reflection", "imagePrompt", "organizingIdea", "claims"],
+  required: ["script", "reflection", "imagePrompt", "organizingIdea", "episodeTitle", "showNotes", "claims"],
   additionalProperties: false
 };
 
@@ -1541,13 +1703,15 @@ async function generateScript(env, digest, quote, diagnostics) {
     stopReason: data.stop_reason
   });
   let text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  let script = "", reflection = "", imagePrompt = "", organizingIdea = "", claims = [];
+  let script = "", reflection = "", imagePrompt = "", organizingIdea = "", episodeTitle = "", showNotes = "", claims = [];
   try {
     const parsed = parseScriptJson(text);
     script = parsed.script || "";
     reflection = parsed.reflection || "";
     imagePrompt = parsed.imagePrompt || "";
     organizingIdea = parsed.organizingIdea || "";
+    episodeTitle = parsed.episodeTitle || "";
+    showNotes = parsed.showNotes || "";
     claims = parsed.claims || [];
     if (!reflection) diagnostics.push({ step: "script", ok: true, note: "no reflection returned" });
     if (!imagePrompt) diagnostics.push({ step: "script", ok: true, note: "no imagePrompt returned -- cover art will fall back to static cover.jpg" });
@@ -1588,6 +1752,8 @@ async function generateScript(env, digest, quote, diagnostics) {
     reflection: toSpeakableAscii(reflection),
     imagePrompt: toSpeakableAscii(imagePrompt),
     organizingIdea: toSpeakableAscii(organizingIdea),
+    episodeTitle: toSpeakableAscii(episodeTitle).replace(/[.:]+$/, "").slice(0, 90),
+    showNotes: toSpeakableAscii(showNotes).slice(0, 400),
     claims
   };
 }
@@ -1907,7 +2073,7 @@ async function runPodcastIngestCore(env, opts = {}) {
     const ledger = await readCreditLedger(env.PODCAST_KV);
     const estChars = Math.min(TARGET_WORDS * 6.2, MAX_SCRIPT_CHARS);
     const estCredits = Math.ceil(estChars * CREDITS_PER_CHAR);
-    if (ledger.creditsUsed + estCredits > MONTHLY_CREDIT_BUDGET) {
+    if (ledger.creditsUsed + estCredits > MONTHLY_CREDIT_BUDGET && !(await accountHasRoom(env, estCredits, diagnostics))) {
       diagnostics.push({ step: "budget", ok: false, note: `monthly ElevenLabs budget would be exceeded (${ledger.creditsUsed} used + ~${estCredits} est > ${MONTHLY_CREDIT_BUDGET}); skipping` });
       result.ok = true; result.skipped = "monthly-credit-budget"; result.ledger = ledger;
       return result;
@@ -1970,6 +2136,11 @@ async function runPodcastIngestCore(env, opts = {}) {
       diagnostics.push({ step: "staleness-space", ok: true, checked: Object.keys(todaySpaceFingerprint).length });
     }
 
+    // ADDED 2026-10-20: after the staleness fingerprints (which must compare the
+    // un-annotated lines), add computed day-over-day storm changes.
+    const todayStormPositions = buildStormPositions(earth);
+    const stormChanges = annotateStormChanges(earth, yesterday?.stormPositions);
+    diagnostics.push({ step: "storm-changes", ok: true, annotated: stormChanges, hadYesterdayPositions: !!yesterday?.stormPositions });
     const digest = buildSourceDigest(space, earth, yesterday, staleEarthIds, staleSpaceIds, ledger.recentOrganizingIdeas || []);
     const theme = dayTheme(space, earth);
     const quote = pickQuote(theme, ledger.recentQuotes || []);
@@ -1985,7 +2156,10 @@ async function runPodcastIngestCore(env, opts = {}) {
     // and its mission (was just the date before) -- this is still a fixed
     // template, not model-generated, same reasoning as the closeout rotation
     // below: consistency matters more than daily novelty for a branding line.
-    const welcomeLine = `Welcome to today's Earth and Orbit for ${niceDate} -- where we cover some of the stories happening in space and here on Earth.`;
+    // CHANGED 2026-10-20: was "...where we cover some of the stories happening in
+    // space and here on Earth." -- "some of" hedged the show's own promise.
+    const weekday = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+    const welcomeLine = `This is Earth and Orbit for ${weekday}, ${niceDate}: the morning's news from space and here on Earth.`;
     // ADDED 2026-08-08 (feedback #3): fixed call-to-action pointing listeners
     // to the two source sites, inserted right before the rotated closeout
     // line. Domain spelled with " dot " rather than "." to keep TTS
@@ -2043,6 +2217,19 @@ async function runPodcastIngestCore(env, opts = {}) {
     // contains reflection-too-long if the cap (130 words) was exceeded --
     // this is the first thing that ever actually acts on that flag instead
     // of just recording it.
+    // ADDED 2026-10-20: repair a theme-announcing opener (see stripThemeOpener).
+    if (audit.flags.some((f) => f.type === "theme-opener")) {
+      const stripped = stripThemeOpener(gen.script);
+      diagnostics.push({ step: "theme-opener-repair", ok: stripped !== gen.script, note: stripped !== gen.script ? "dropped theme-announcing opening sentence(s)" : "kept: stripping would leave the stories too short" });
+      if (stripped !== gen.script) {
+        gen.script = stripped;
+        script = gen.reflection ? `${gen.script}\n\n${gen.reflection}` : gen.script;
+        const reAudit = auditClaims(gen.script, gen.claims, validIds, digest, gen.reflection, quote);
+        diagnostics.push({ step: "audit", ok: reAudit.clean, claims: reAudit.claimCount, flags: reAudit.flags, note: "post-theme-opener re-audit" });
+        audit.flags = reAudit.flags;
+        audit.clean = reAudit.clean;
+      }
+    }
     const reflectionTooLong = audit.flags.find((f) => f.type === "reflection-too-long");
     if (reflectionTooLong && gen.reflection) {
       const tightened = await tightenText(env, gen.reflection, 100, "reflection", diagnostics);
@@ -2126,7 +2313,7 @@ async function runPodcastIngestCore(env, opts = {}) {
     const charCount = script.length;
     const credits = Math.ceil(charCount * CREDITS_PER_CHAR);
     const words = script.split(/\s+/).length;
-    if (ledger.creditsUsed + credits > MONTHLY_CREDIT_BUDGET) {
+    if (ledger.creditsUsed + credits > MONTHLY_CREDIT_BUDGET && !(await accountHasRoom(env, credits, diagnostics))) {
       diagnostics.push({ step: "budget", ok: false, note: "actual script exceeded remaining budget; skipping TTS" });
       result.ok = true; result.skipped = "monthly-credit-budget-actual";
       return result;
@@ -2171,11 +2358,19 @@ async function runPodcastIngestCore(env, opts = {}) {
     const episodeNumber = reusedEpisodeNumber || await nextEpisodeNumber(env.PODCAST_KV);
     diagnostics.push({ step: "episode-number", ok: true, number: episodeNumber, reused: !!reusedEpisodeNumber });
 
-    const estSeconds = Math.round(words / 2.5);
+    // CHANGED 2026-10-20: was words / 2.5, which overstated every episode
+    // (Oct 18: listed 2:48, real 2:26). The audio is mp3_44100_128 = 16,000
+    // bytes per second, so the byte count gives the real duration.
+    const estSeconds = Math.round(audio.byteLength / 16000) || Math.round(words / 2.5);
     const episode = {
       id: day,
       episodeNumber,
-      title: `Earth and Orbit -- ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}`,
+      // CHANGED 2026-10-20: headline titles ("Oct 18: Typhoon Champi passes Guam")
+      // so episodes are distinguishable in a podcast app; date-only as fallback.
+      title: gen.episodeTitle
+        ? `${new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}: ${gen.episodeTitle}`
+        : `Earth and Orbit -- ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}`,
+      showNotes: gen.showNotes || null,
       pubDate: new Date().toUTCString(),
       audioKey: objectKey,
       imageKey,
@@ -2199,6 +2394,7 @@ async function runPodcastIngestCore(env, opts = {}) {
       // staleStorms is TODAY's own finding, persisted so it's checkable via
       // a plain KV get after the fact, same reasoning as episode.imageError.
       stormFingerprint: todayStormFingerprint,
+      stormPositions: todayStormPositions,
       staleStorms: staleStorms.length ? staleStorms : null,
       // ADDED 2026-08-28: space-side counterpart to the two fields above.
       spaceFingerprint: todaySpaceFingerprint,
@@ -2227,7 +2423,10 @@ async function runPodcastIngestCore(env, opts = {}) {
       id: episode.id, episodeNumber: episode.episodeNumber, title: episode.title, pubDate: episode.pubDate,
       audioKey: episode.audioKey, imageKey: episode.imageKey, imageWidth: episode.imageWidth, imageHeight: episode.imageHeight,
       bytes: episode.bytes, durationSeconds: episode.durationSeconds,
-      blurb: script.split(/(?<=\.)\s+/).slice(0, 2).join(" ").slice(0, 400)
+      // CHANGED 2026-10-20: show notes from the model, else the first two
+      // sentences of the stories -- no longer the fixed welcome line, which made
+      // every episode's description start with the same 140 characters.
+      blurb: (gen.showNotes || gen.script.split(/(?<=\.)\s+/).slice(0, 2).join(" ")).slice(0, 400)
     });
     manifest = manifest.slice(0, 60);
     await env.PODCAST_KV.put("podcast:manifest", JSON.stringify(manifest));
