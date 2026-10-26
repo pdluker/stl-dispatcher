@@ -20,9 +20,9 @@
 // (ai-podcast.js) and the ai-daily email roundup read editions by these labels.
 
 import { fetchSource, recordSourceResult } from './fetch-source.js';
+import { MODELS, postMessages, readMessage } from './anthropic.js';
 
-const MODEL = 'claude-sonnet-5-5';
-const ANTHROPIC_VERSION = '2023-06-01';
+const MODEL = MODELS.SONNET;
 // Adaptive thinking shares this budget with the JSON output (see the
 // 2026-09-24 note in podcast-ingest.js) -- keep it generous.
 const MAX_TOKENS = 16000;
@@ -242,23 +242,18 @@ function parseJsonLoose(text) {
   return JSON.parse(s.slice(start, end + 1));
 }
 
-export async function callClaude(env, { system, user, maxTokens = MAX_TOKENS }) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': ANTHROPIC_VERSION },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: user }],
-    }),
+export async function callClaude(env, { system, user, maxTokens = MAX_TOKENS, tag = 'ai' }) {
+  const res = await postMessages(env, {
+    model: MODEL,
+    max_tokens: maxTokens,
+    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: user }],
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Anthropic HTTP ${res.status}: ${body.slice(0, 300)}`);
   }
-  const data = await res.json();
-  const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  const { data, text } = await readMessage(env, res, { tag });
   return { text, usage: data.usage || null, stopReason: data.stop_reason };
 }
 
@@ -314,7 +309,7 @@ export async function runAiIngest(env, { force = false, now = new Date() } = {})
   let usage = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const r = await callClaude(env, { system: SYSTEM_PROMPT, user: userMsg });
+      const r = await callClaude(env, { system: SYSTEM_PROMPT, user: userMsg, tag: 'ai-ingest:editor' });
       usage = r.usage;
       edition = auditEdition(parseJsonLoose(r.text), candidates);
       diagnostics.push({ step: 'editor', attempt, ok: true, stories: edition.stories.length, dropped: edition.dropped, usage, stopReason: r.stopReason });

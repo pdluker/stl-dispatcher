@@ -74,7 +74,13 @@
  * single merged version; the space repo's copy must stay byte-identical
  * (its GitHub Action imports fetchUpcomingLaunches/fetchSpaceXFallbackLaunches
  * from it).
+ *
+ * ADDED 2026-10-26: imports ./anthropic.js (models, text reads, usage log),
+ * so the space repo needs its own byte-identical copy of that file beside
+ * this one, or the Action's import of this module fails.
  */
+
+import { MODELS, postMessages, readMessage, recordUsage, textOf } from "./anthropic.js";
 
 // ---------------------------------------------------------------------------
 // 1. Source list (subset of the top-25 audit — RSS-friendly feeds only;
@@ -395,40 +401,38 @@ export async function summarizeClusters(clusters, env, fetchImpl = fetch) {
 
   for (const batch of batches) {
     const prompt = buildSummarizationPrompt(batch);
-    const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-5-5",
-        // CHANGED 2026-07-25: raised from 2000 — a full batch of
-        // SUMMARIZE_BATCH_SIZE (25) items each needing a headline, summary,
-        // whyItMatters, and category can plausibly exceed 2000 tokens on a
-        // heavy-news day, truncating the JSON array mid-response. A
-        // truncated response fails JSON.parse, and safeParseJsonArray()
-        // fails soft (returns []) by design — meaning a token-limit
-        // truncation on EVERY batch in a run would silently produce zero
-        // stories with no error anywhere. This is the leading suspect for
-        // the Jul 25, 2026 zero-stories incident (real fetch counts across
-        // 12 sources, zero summarized output, no thrown error). Root cause
-        // not independently confirmed via a captured raw response — nothing
-        // was stored at the time — so this is a preventive fix plus the
-        // batchesFailed/lastRawSnippet tracking below, so a repeat is
-        // diagnosable instead of another guess.
-        max_tokens: 12288,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    const res = await postMessages(env, {
+      model: MODELS.HAIKU,
+      // CHANGED 2026-07-25: raised from 2000 — a full batch of
+      // SUMMARIZE_BATCH_SIZE (25) items each needing a headline, summary,
+      // whyItMatters, and category can plausibly exceed 2000 tokens on a
+      // heavy-news day, truncating the JSON array mid-response. A
+      // truncated response fails JSON.parse, and safeParseJsonArray()
+      // fails soft (returns []) by design — meaning a token-limit
+      // truncation on EVERY batch in a run would silently produce zero
+      // stories with no error anywhere. This is the leading suspect for
+      // the Jul 25, 2026 zero-stories incident (real fetch counts across
+      // 12 sources, zero summarized output, no thrown error). Root cause
+      // not independently confirmed via a captured raw response — nothing
+      // was stored at the time — so this is a preventive fix plus the
+      // batchesFailed/lastRawSnippet tracking below, so a repeat is
+      // diagnosable instead of another guess.
+      max_tokens: 12288,
+      messages: [{ role: "user", content: prompt }],
+    }, fetchImpl);
 
     if (!res.ok) {
       throw new Error(`Anthropic API error ${res.status}: ${await res.text()}`);
     }
 
     const data = await res.json();
-    const text = data.content.map((b) => b.text || "").join("");
+    await recordUsage(env, "space:summarize", data);
+    // CHANGED 2026-10-26: a response with no text block counts as a failed
+    // batch below, same as unparseable output, rather than throwing -- a
+    // throw here skips the SPACE_KV write for the whole run.
+    let text = "";
+    let noTextError = null;
+    try { text = textOf(data); } catch (e) { noTextError = e.message; }
     const parsed = safeParseJsonArray(text);
 
     if (parsed.length === 0 && batch.length > 0) {
@@ -437,7 +441,7 @@ export async function summarizeClusters(clusters, env, fetchImpl = fetch) {
       // after the fact — capture a snippet now so next time doesn't require
       // another guess.
       batchesFailed++;
-      lastRawSnippet = text.slice(0, 500);
+      lastRawSnippet = noTextError || text.slice(0, 500);
     }
 
     // FIXED 2026-07-25: this used to match parsed[idx] to batch[idx] by pure
@@ -539,23 +543,14 @@ export async function generateBriefing(summarized, env, fetchImpl = fetch) {
       JSON.stringify(top, null, 2),
     ].join("\n");
 
-    const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-5-5",
-        max_tokens: 900,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    const res = await postMessages(env, {
+      model: MODELS.HAIKU,
+      max_tokens: 900,
+      messages: [{ role: "user", content: prompt }],
+    }, fetchImpl);
 
     if (!res.ok) throw new Error(`Anthropic API error ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    const text = data.content.map((b) => b.text || "").join("").trim();
+    const text = (await readMessage(env, res, { tag: "space:briefing" })).text.trim();
     return { briefing: text || null, error: text ? null : "Empty response from Haiku" };
   } catch (err) {
     return { briefing: null, error: String(err.message || err) };

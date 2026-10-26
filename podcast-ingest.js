@@ -5,6 +5,8 @@
 // cron), writes one daily "Earth and Orbit" episode: script, TTS audio, cover
 // image, RSS manifest entry, and a monthly ElevenLabs credit ledger.
 
+import { MODELS, postMessages, readMessage } from "./anthropic.js";
+
 // CHANGED 2026-09-24: Haiku 4.5 -> Sonnet 5. Haiku repeatedly ignored the
 // longer rules in SYSTEM_PROMPT (e.g. the Sep 24 reflection used the retired
 // space-patience/Earth-urgency closing move). Sonnet 5 rejects temperature/
@@ -15,9 +17,8 @@
 // CHANGED 2026-10-08: Sonnet 5 -> Sonnet 5.5, which rejects
 // thinking: {type: "disabled"} with a 400; between_tools is its lowest
 // setting (no extended thinking; effort must stay high or below).
-const SCRIPT_MODEL = "claude-sonnet-5-5";
+const SCRIPT_MODEL = MODELS.SONNET;
 const HELPER_THINKING = { type: "between_tools" };
-const ANTHROPIC_VERSION = "2023-06-01";
 // CHANGED 2026-10-09: 900 -> 400. All podcasts share one ElevenLabs Creator
 // plan (100k credits/month); this show alone was ~84k. ~400 words is ~3 min.
 const TARGET_WORDS = 400;
@@ -980,23 +981,18 @@ function quoteIsVerbatim(reflection, quote) {
 // now contains the quote verbatim; otherwise keeps the original.
 async function restoreQuote(env, reflection, quote, diagnostics) {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-      body: JSON.stringify({
-        model: SCRIPT_MODEL,
-        max_tokens: 3000,
-        thinking: HELPER_THINKING,
-        output_config: { format: { type: "json_schema", schema: { type: "object", properties: { reflection: { type: "string" } }, required: ["reflection"], additionalProperties: false } } },
-        messages: [{
-          role: "user",
-          content: `This closing reflection for a spoken audio briefing quotes ${quote.who} but shortened or changed the quotation. Rewrite the reflection so it contains the quotation EXACTLY as given below - every word, in order, no "...", no trimming - attributed to ${quote.who}. Keep the same idea and voice, plain prose, no numbers, dates, or place names, and stay under 130 words; trim your own sentences to make room rather than the quotation.\n\nQUOTATION:\n"${quote.text}"\n\nREFLECTION:\n${reflection}`
-        }]
-      })
+    const res = await postMessages(env, {
+      model: SCRIPT_MODEL,
+      max_tokens: 3000,
+      thinking: HELPER_THINKING,
+      output_config: { format: { type: "json_schema", schema: { type: "object", properties: { reflection: { type: "string" } }, required: ["reflection"], additionalProperties: false } } },
+      messages: [{
+        role: "user",
+        content: `This closing reflection for a spoken audio briefing quotes ${quote.who} but shortened or changed the quotation. Rewrite the reflection so it contains the quotation EXACTLY as given below - every word, in order, no "...", no trimming - attributed to ${quote.who}. Keep the same idea and voice, plain prose, no numbers, dates, or place names, and stay under 130 words; trim your own sentences to make room rather than the quotation.\n\nQUOTATION:\n"${quote.text}"\n\nREFLECTION:\n${reflection}`
+      }]
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const text = (await readMessage(env, res, { tag: "podcast:quote-repair" })).text.trim();
     const rewritten = toSpeakableAscii(parseScriptJson(text).reflection || "");
     if (!rewritten || !quoteIsVerbatim(rewritten, quote)) {
       diagnostics.push({ step: "quote-repair", ok: false, note: "rewrite still lacked the verbatim quote; keeping original" });
@@ -1353,22 +1349,17 @@ async function repairConnectorCrutches(env, script, flags, diagnostics) {
     const target = sentences.find((s) => s.toLowerCase().includes(flag.detail));
     if (!target) continue;
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-        body: JSON.stringify({
-          model: SCRIPT_MODEL,
-          max_tokens: 150,
-          thinking: HELPER_THINKING,
-          messages: [{
-            role: "user",
-            content: `Rewrite this single sentence from a spoken audio script so it does NOT use the word "${flag.detail.replace(",", "")}" or any similar connector word (also, meanwhile, elsewhere, in addition, speaking of). Keep every fact exactly as stated -- change ONLY the sentence structure/connector, nothing else. Return ONLY the rewritten sentence, no preamble, no quotes.\n\nSentence: ${target.trim()}`
-          }]
-        })
+      const res = await postMessages(env, {
+        model: SCRIPT_MODEL,
+        max_tokens: 150,
+        thinking: HELPER_THINKING,
+        messages: [{
+          role: "user",
+          content: `Rewrite this single sentence from a spoken audio script so it does NOT use the word "${flag.detail.replace(",", "")}" or any similar connector word (also, meanwhile, elsewhere, in addition, speaking of). Keep every fact exactly as stated -- change ONLY the sentence structure/connector, nothing else. Return ONLY the rewritten sentence, no preamble, no quotes.\n\nSentence: ${target.trim()}`
+        }]
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const rewritten = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+      const rewritten = (await readMessage(env, res, { tag: "podcast:repair" })).text.trim();
       if (rewritten && rewritten.length > 10) {
         repaired = repaired.replace(target, ` ${rewritten} `);
         repairedCount++;
@@ -1399,16 +1390,13 @@ async function repairConnectorCrutches(env, script, flags, diagnostics) {
 async function expandShortScript(env, script, digest, diagnostics) {
   const before = script.trim().split(/\s+/).filter(Boolean).length;
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-      body: JSON.stringify({
-        model: SCRIPT_MODEL,
-        max_tokens: 2000,
-        thinking: HELPER_THINKING,
-        messages: [{
-          role: "user",
-          content: `Below is the stories section of a spoken daily briefing, and the source material it was written from. It is ${before} words. It needs to be at least 280 words.
+    const res = await postMessages(env, {
+      model: SCRIPT_MODEL,
+      max_tokens: 2000,
+      thinking: HELPER_THINKING,
+      messages: [{
+        role: "user",
+        content: `Below is the stories section of a spoken daily briefing, and the source material it was written from. It is ${before} words. It needs to be at least 280 words.
 
 Expand it by developing the stories that are ALREADY THERE. Do not add a new story. Do not add any new fact, number, date, place, name, or agency that is not already present in the source material below -- if a detail isn't in the source, it does not go in. Draw the additional length from the source material's own specifics: what a finding actually was, what it changes, what it doesn't yet tell us, why anyone was looking.
 
@@ -1421,12 +1409,11 @@ ${digest}
 
 CURRENT STORIES SECTION:
 ${script}`
-        }]
-      })
+      }]
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const expanded = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const { data, text: reply } = await readMessage(env, res, { tag: "podcast:expand" });
+    const expanded = reply.trim();
     const after = expanded ? expanded.trim().split(/\s+/).filter(Boolean).length : 0;
     if (!expanded || after <= before) {
       diagnostics.push({ step: "expand", ok: false, before, after, note: "expansion returned nothing longer; keeping original" });
@@ -1475,16 +1462,13 @@ const TEXT_OVERLAP_THRESHOLD = 0.15;
 async function rewriteForFreshness(env, script, digest, yesterdayScript, diagnostics) {
   const before = computeTextOverlap(script, yesterdayScript);
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-      body: JSON.stringify({
-        model: SCRIPT_MODEL,
-        max_tokens: 2000,
-        thinking: HELPER_THINKING,
-        messages: [{
-          role: "user",
-          content: `Below is the stories section of a spoken daily briefing. It reuses too much of yesterday's episode's own sentences -- ${(before * 100).toFixed(0)}% of it overlaps with yesterday's wording, even after accounting for storm names and numbers changing.
+    const res = await postMessages(env, {
+      model: SCRIPT_MODEL,
+      max_tokens: 2000,
+      thinking: HELPER_THINKING,
+      messages: [{
+        role: "user",
+        content: `Below is the stories section of a spoken daily briefing. It reuses too much of yesterday's episode's own sentences -- ${(before * 100).toFixed(0)}% of it overlaps with yesterday's wording, even after accounting for storm names and numbers changing.
 
 Rewrite it to report the same facts, from the same source material, in genuinely different sentences and structure than yesterday's episode used. Do not add any new fact, number, date, place, name, or agency that isn't already in the source material below. Do not change what happened -- only how it's written. Keep the same voice: plain, specific, varied sentence length.
 
@@ -1498,12 +1482,11 @@ ${yesterdayScript.slice(0, 4000)}
 
 TODAY'S CURRENT DRAFT (too similar to yesterday's, needs fresh wording):
 ${script}`
-        }]
-      })
+      }]
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const rewritten = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const { data, text: reply } = await readMessage(env, res, { tag: "podcast:rewrite-freshness" });
+    const rewritten = reply.trim();
     if (!rewritten) {
       diagnostics.push({ step: "rewrite-freshness", ok: false, before, note: "rewrite returned nothing; keeping original" });
       return script;
@@ -1539,22 +1522,18 @@ ${script}`
 async function tightenText(env, text, targetWords, label, diagnostics) {
   const before = text.trim().split(/\s+/).filter(Boolean).length;
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-      body: JSON.stringify({
-        model: SCRIPT_MODEL,
-        max_tokens: 1000,
-        thinking: HELPER_THINKING,
-        messages: [{
-          role: "user",
-          content: `The following ${label} for a spoken audio script is ${before} words, over its ${targetWords}-word ceiling. Cut it to fit at or under ${targetWords} words. Preserve every distinct fact and idea and the same voice -- tighten sentences, cut redundancy and elaboration that isn't load-bearing, do not remove entire ideas if avoidable, and never add anything new. Return ONLY the tightened text, no preamble, no quotes, no word count.\n\nTEXT:\n${text}`
-        }]
-      })
+    const res = await postMessages(env, {
+      model: SCRIPT_MODEL,
+      max_tokens: 1000,
+      thinking: HELPER_THINKING,
+      messages: [{
+        role: "user",
+        content: `The following ${label} for a spoken audio script is ${before} words, over its ${targetWords}-word ceiling. Cut it to fit at or under ${targetWords} words. Preserve every distinct fact and idea and the same voice -- tighten sentences, cut redundancy and elaboration that isn't load-bearing, do not remove entire ideas if avoidable, and never add anything new. Return ONLY the tightened text, no preamble, no quotes, no word count.\n\nTEXT:\n${text}`
+      }]
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const tightened = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const { data, text: reply } = await readMessage(env, res, { tag: "podcast:tighten" });
+    const tightened = reply.trim();
     const after = tightened ? tightened.trim().split(/\s+/).filter(Boolean).length : before;
     if (!tightened || after >= before) {
       diagnostics.push({ step: "tighten", ok: false, label, before, after, note: "tightening returned nothing shorter; keeping original per one-shot rule" });
@@ -1638,24 +1617,20 @@ const FILL_SCHEMA = {
 // the episode exactly as it would have been without the retry.
 async function fillMissingFields(env, digest, quote, script, diagnostics) {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-      body: JSON.stringify({
-        model: SCRIPT_MODEL,
-        max_tokens: 4000,
-        thinking: HELPER_THINKING,
-        output_config: { format: { type: "json_schema", schema: FILL_SCHEMA } },
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        messages: [{
-          role: "user",
-          content: `Today's script has already been written (below) but the reflection, imagePrompt, organizingIdea, and claims fields came back empty. Do NOT rewrite the script. Fill in all four fields for THIS script, following your instructions for each: the reflection (60-100 words, containing the quotation verbatim), the cover image prompt, the organizing idea the script actually uses, and a claims entry for every load-bearing fact in the script with the exact source id it came from.\n\nSOURCE MATERIAL:\n${digest}\n\nQUOTATION TO USE IN THE REFLECTION, verbatim, attributed to ${quote.who}:\n"${quote.text}"\n\nTHE SCRIPT:\n${script}`
-        }]
-      })
+    const res = await postMessages(env, {
+      model: SCRIPT_MODEL,
+      max_tokens: 4000,
+      thinking: HELPER_THINKING,
+      output_config: { format: { type: "json_schema", schema: FILL_SCHEMA } },
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      messages: [{
+        role: "user",
+        content: `Today's script has already been written (below) but the reflection, imagePrompt, organizingIdea, and claims fields came back empty. Do NOT rewrite the script. Fill in all four fields for THIS script, following your instructions for each: the reflection (60-100 words, containing the quotation verbatim), the cover image prompt, the organizing idea the script actually uses, and a claims entry for every load-bearing fact in the script with the exact source id it came from.\n\nSOURCE MATERIAL:\n${digest}\n\nQUOTATION TO USE IN THE REFLECTION, verbatim, attributed to ${quote.who}:\n"${quote.text}"\n\nTHE SCRIPT:\n${script}`
+      }]
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 150)}`);
-    const data = await res.json();
-    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+    const { data, text: reply } = await readMessage(env, res, { tag: "podcast:script-fill", joiner: "\n" });
+    const text = reply.trim();
     const parsed = parseScriptJson(text);
     diagnostics.push({
       step: "script-fill", ok: true, outputTokens: data.usage?.output_tokens ?? null,
@@ -1669,32 +1644,28 @@ async function fillMissingFields(env, digest, quote, script, diagnostics) {
 }
 
 async function generateScript(env, digest, quote, diagnostics) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": ANTHROPIC_VERSION },
-    body: JSON.stringify({
-      model: SCRIPT_MODEL,
-      max_tokens: MAX_SCRIPT_TOKENS,
-      thinking: { type: "adaptive" },
-      // CHANGED 2026-09-25: added format. Sonnet 5 writes the script with
-      // real paragraph breaks, and a raw newline inside a JSON string is
-      // invalid JSON -- the Sep 25 episode failed JSON.parse, fell through to
-      // the raw-text fallback, and read the entire JSON object (claims array
-      // and all) aloud. Structured outputs guarantee a parseable response.
-      output_config: { effort: "medium", format: { type: "json_schema", schema: SCRIPT_SCHEMA } },
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      messages: [{
-        role: "user",
-        content: `Here is today's source material. Write the briefing.\n\n${digest}\n\nQUOTATION TO USE IN THE REFLECTION, verbatim, attributed to ${quote.who}:\n"${quote.text}"`
-      }]
-      // NOTE: no tools block. No web_search. This call must never search.
-    })
+  const res = await postMessages(env, {
+    model: SCRIPT_MODEL,
+    max_tokens: MAX_SCRIPT_TOKENS,
+    thinking: { type: "adaptive" },
+    // CHANGED 2026-09-25: added format. Sonnet 5 writes the script with
+    // real paragraph breaks, and a raw newline inside a JSON string is
+    // invalid JSON -- the Sep 25 episode failed JSON.parse, fell through to
+    // the raw-text fallback, and read the entire JSON object (claims array
+    // and all) aloud. Structured outputs guarantee a parseable response.
+    output_config: { effort: "medium", format: { type: "json_schema", schema: SCRIPT_SCHEMA } },
+    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    messages: [{
+      role: "user",
+      content: `Here is today's source material. Write the briefing.\n\n${digest}\n\nQUOTATION TO USE IN THE REFLECTION, verbatim, attributed to ${quote.who}:\n"${quote.text}"`
+    }]
+    // NOTE: no tools block. No web_search. This call must never search.
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`Anthropic HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
-  const data = await res.json();
+  const { data, text: reply } = await readMessage(env, res, { tag: "podcast:script", joiner: "\n" });
   diagnostics.push({
     step: "script", ok: true,
     inputTokens: data.usage?.input_tokens ?? null,
@@ -1702,7 +1673,7 @@ async function generateScript(env, digest, quote, diagnostics) {
     cacheRead: data.usage?.cache_read_input_tokens ?? 0,
     stopReason: data.stop_reason
   });
-  let text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  let text = reply.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
   let script = "", reflection = "", imagePrompt = "", organizingIdea = "", episodeTitle = "", showNotes = "", claims = [];
   try {
     const parsed = parseScriptJson(text);

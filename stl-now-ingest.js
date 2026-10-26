@@ -37,8 +37,9 @@
  *    a prompt instruction alone is a request, not a guarantee.
  */
 
-const SCRIPT_MODEL = 'claude-haiku-5-5';
-const ANTHROPIC_VERSION = '2023-06-01';
+import { MODELS, postMessages, readMessage } from './anthropic.js';
+
+const SCRIPT_MODEL = MODELS.HAIKU;
 
 // ---- Cost controls. Same shape as podcast-ingest.js; tune here, nowhere else.
 const TARGET_WORDS = 700;              // ~4-5 min at a 150 wpm read -- shorter than
@@ -250,26 +251,18 @@ async function writeCreditLedger(kv, ledger) {
 /* ----------------------------------------------------------- external calls */
 
 async function generateScript(env, digest, diagnostics) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': ANTHROPIC_VERSION,
-    },
-    body: JSON.stringify({
-      model: SCRIPT_MODEL,
-      max_tokens: MAX_SCRIPT_TOKENS,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: `Here is today's material. Write the show.\n\n${digest}` }],
-      // No tools block. No web_search. Same rule as podcast-ingest.js.
-    }),
+  const res = await postMessages(env, {
+    model: SCRIPT_MODEL,
+    max_tokens: MAX_SCRIPT_TOKENS,
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: `Here is today's material. Write the show.\n\n${digest}` }],
+    // No tools block. No web_search. Same rule as podcast-ingest.js.
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Anthropic HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
-  const data = await res.json();
+  const { data, text: reply } = await readMessage(env, res, { tag: 'stl-now:script', joiner: '\n' });
   diagnostics.push({
     step: 'script', ok: true,
     inputTokens: data.usage?.input_tokens ?? null,
@@ -277,7 +270,7 @@ async function generateScript(env, digest, diagnostics) {
     stopReason: data.stop_reason,
   });
 
-  let text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')
+  let text = reply
     .replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
   let script = '', claims = [];

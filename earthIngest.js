@@ -77,6 +77,7 @@ const EARTH_DATA_KEY = "earth-data";
 const NMSZ_BBOX = { minlatitude: 35.0, maxlatitude: 38.5, minlongitude: -91.5, maxlongitude: -88.5 };
 const YELLOWSTONE_BBOX = { minlatitude: 44.0, maxlatitude: 45.2, minlongitude: -111.3, maxlongitude: -109.7 };
 import { BROWSER_UA } from "./fetch-source.js";
+import { MODELS, postMessages, readMessage } from "./anthropic.js";
 const USER_AGENT = "stluker.com earth-ingest/1.0 (contact: pdluker@gmail.com)";
 const GVP_MAX_AGE_MS = 6 * 24 * 3600 * 1000; // re-fetch GVP at most ~weekly
 // Bump this whenever parseGvpRss's output shape changes (new fields, fixed
@@ -607,7 +608,7 @@ async function callIntelligence(env, counts, items, referencePool) {
     return { briefing: null, whyItMatters: {}, error: "ANTHROPIC_API_KEY not bound on stl-dispatcher" };
   }
   const body = {
-    model: "claude-haiku-5-5",
+    model: MODELS.HAIKU,
     max_tokens: 3900,
     system: [{ type: "text", text: INTELLIGENCE_SYSTEM, cache_control: { type: "ephemeral" } }],
     // 2026-10-11: strip U+FFFD replacement characters (from the windows-1252
@@ -618,15 +619,7 @@ async function callIntelligence(env, counts, items, referencePool) {
   // 2026-10-11: one retry after 3s on 403/429/5xx before giving up.
   let res;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(body),
-    });
+    res = await postMessages(env, body);
     if (res.ok || attempt === 2 || !(res.status === 403 || res.status === 429 || res.status >= 500)) break;
     await new Promise((r) => setTimeout(r, 3000));
   }
@@ -634,8 +627,7 @@ async function callIntelligence(env, counts, items, referencePool) {
     const bodyText = await res.text();
     return { briefing: null, whyItMatters: {}, error: "Anthropic API returned " + res.status + ": " + bodyText.slice(0, 300) };
   }
-  const data = await res.json();
-  const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  const { text } = await readMessage(env, res, { tag: "earth-ingest:intelligence" });
   try {
     const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
