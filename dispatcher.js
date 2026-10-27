@@ -69,11 +69,13 @@
  *                         *next-day* read, so Monday's episode always reads
  *                         Sunday's already-refreshed music/sports data)
  *   45 11 * * *           aiIngest — daily AI edition for ai.stluker.com
- *                         (added 2026-10-04, ai-ingest.js)
+ *                         (added 2026-10-04, ai-ingest.js), then the AI Daily
+ *                         newsletter on Tue/Thu/Sat/Sun (daily since 2026-10-27)
  *   50 11 * * MON,WED,FRI aiPodcast — "AI Daily Recap" in Paul's cloned
  *                         voice, covering editions since the last episode,
- *                         then the AI Daily newsletter roundup (added
- *                         2026-10-04, ai-podcast.js; M/W/F since 2026-10-16)
+ *                         then that day's AI Daily newsletter, which links
+ *                         the episode (added 2026-10-04, ai-podcast.js;
+ *                         M/W/F since 2026-10-16)
  *   55 11 * * *           statusSync (reconcile + alert email) — daily, after
  *                         every ingest above so it judges TODAY's runs
  *                         (moved from 11:00 on 2026-09-28)
@@ -628,8 +630,12 @@ async function runAiOnly(env, { force = false } = {}) {
         day: result.day, skipped: result.skipped || null, stories: result.stories || null, candidates: result.candidates || null,
       });
       try { await env.STATUS_KV.delete('ai:last-error'); } catch { /* non-fatal */ }
-      // CHANGED 2026-10-16: the daily edition is web-only. The newsletter now
-      // goes out Mon/Wed/Fri from runAiPodOnly() as a roundup (sendAiNewsletter).
+      // CHANGED 2026-10-27: the newsletter is daily again. On podcast days
+      // runAiPodOnly() sends it at :50 so it can link the new episode; on
+      // every other day it goes out here. sendAiNewsletter() never throws.
+      if (!AI_POD_UTC_DAYS.has(new Date().getUTCDay())) {
+        result.newsletter = await sendAiNewsletter(env, result.day || new Date().toISOString().slice(0, 10));
+      }
     } else {
       console.error('[stl-dispatcher] ai ingest returned ok:false:', result.error);
       await recordTaskError(env, 'ai:last-error', { error: result.error, diagnostics: result.diagnostics || null, day: result.day, source: 'ai-ok-false' });
@@ -642,7 +648,12 @@ async function runAiOnly(env, { force = false } = {}) {
   }
 }
 
-// ── AI Daily newsletter — Mon/Wed/Fri roundup, sent by runAiPodOnly() ──────
+// ── AI Daily newsletter — daily ────────────────────────────────────────────
+// Sent by runAiPodOnly() on podcast days, by runAiOnly() on the rest.
+// AI_POD_UTC_DAYS must match the aiPodcast cron in wrangler.jsonc
+// ("50 11 * * MON,WED,FRI"). If a send is missed, the next one catches up:
+// ai-daily mails every edition since the last ai:news:sent:<day>.
+const AI_POD_UTC_DAYS = new Set([1, 3, 5]); // Mon, Wed, Fri
 // Moved here 2026-10-16 from runAiOnly() (the daily edition is web-only now).
 // ai-daily builds the roundup (episode's covered editions, or every edition
 // since the last send) and dedupes per day (ai:news:sent:<day>), so a forced
@@ -672,7 +683,7 @@ async function sendAiNewsletter(env, day) {
 
 // ── AI Daily Recap podcast — Mon/Wed/Fri, own cron. ADDED 2026-10-04 ───────
 // CHANGED 2026-10-16: after the episode attempt (success, skip, or error --
-// including a TTS failure) the Mon/Wed/Fri newsletter is sent. Dry runs never
+// including a TTS failure) that day's newsletter is sent. Dry runs never
 // send.
 async function runAiPodOnly(env, { force = false, dryRun = false } = {}) {
   let result;

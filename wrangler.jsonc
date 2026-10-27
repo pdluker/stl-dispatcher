@@ -145,8 +145,8 @@
                                // unreachable and stl-weekly (created 2026-08-27) never ran
                                // on schedule. Caught by the reconciler's own cron_drift
                                // check, not by a human noticing a missing episode.
-      "45 11 * * *",           // aiIngest -- daily AI edition for ai.stluker.com. ADDED 2026-10-04.
-      "50 11 * * MON,WED,FRI", // aiPodcast -- "AI Daily Recap" + newsletter roundup, M/W/F (was Mon/Thu until 2026-10-16). ADDED 2026-10-04.
+      "45 11 * * *",           // aiIngest -- daily AI edition for ai.stluker.com, + newsletter on Tue/Thu/Sat/Sun (2026-10-27). ADDED 2026-10-04.
+      "50 11 * * MON,WED,FRI", // aiPodcast -- "AI Daily Recap" + that day's newsletter, M/W/F (was Mon/Thu until 2026-10-16). Days must match AI_POD_UTC_DAYS in dispatcher.js. ADDED 2026-10-04.
                                // Must run after :45 so M/W/F episodes include that day's edition.
       "55 11 * * *"            // statusSync (reconcile + alerting) -- ADDED 2026-09-28.
                                // Was bundled into the 11:00 slot, which ran BEFORE
