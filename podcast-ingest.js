@@ -140,7 +140,7 @@ NO FILLER FOR THE THEME. Every sentence has to say something about the story it'
 
 KEEP THE OPENING'S PROMISE. Whatever frame your opening names, the stories that follow have to actually use it. Don't open by promising a three-way split or a claim about "where human spaceflight is" and then drop it after the first story.
 
-LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs. Call a storm by the name exactly as supplied in its line: the code relabels storms from their current winds (a "hurricane" at 35 miles per hour is supplied as a tropical depression), so never upgrade one back from memory. When an item is marked "DATA IS FROM YESTERDAY" or "DATA IS N DAYS OLD", say so aloud in plain words ("as of yesterday's last update") - a day-old position for a strong storm is a different fact from a current one.
+LIVE HAZARDS. Never call an active storm, fire, or eruption boring, routine, or "not doing anything interesting" - people are in its path. If strength facts (winds, category) are supplied, use them; a storm described only by position leaves out the thing a listener most needs. Call a storm by the name exactly as supplied in its line: the code relabels storms from their current winds (a "hurricane" at 35 miles per hour is supplied as a tropical depression), so never upgrade one back from memory. When an item is marked "DATA IS FROM YESTERDAY" or "DATA IS N DAYS OLD", say so aloud in plain words ("as of yesterday's last update") - a day-old position for a strong storm is a different fact from a current one. Say it once, in a clause, and move on: the age of a report is a caveat, never a story of its own, and never the subject of the episode title, the organizing idea, or the reflection. Do not speculate about consequences the source doesn't state - alerts, tsunamis, evacuations, crews, damage, disruption - and do not tell listeners to check advisories or take precautions unless the source item says so.
 
 HEDGES ARE FACTS. Qualifiers in the source - nearly, about, roughly, up to, at least, may, appears to, expected to - are part of the fact, not decoration. "Nearly full" stays "nearly full", never "full"; "may" never becomes "will". Dropping a hedge is changing a load-bearing fact. This is checked after generation.
 
@@ -587,6 +587,7 @@ async function readEarthBlob(ns, key) {
     for (const kind of ["wildfires", "storms", "ice"]) {
       for (const ev of se[kind] || []) {
         const facts = [];
+        let dataAgeDays = 0; // ADDED 2026-10-27: see DATA_AGE_* in pickTopEarthEvents
         if (ev.description) {
           facts.push(ev.description);
         } else {
@@ -619,6 +620,7 @@ async function readEarthBlob(ns, key) {
               // unmissable; the model is told to say it aloud (see LIVE HAZARDS).
               const iso = d.toISOString().slice(0, 10);
               const days = Math.round((Date.parse(utcDayKey()) - Date.parse(iso)) / 86400000);
+              dataAgeDays = Math.max(0, days);
               const age = days <= 0 ? "" : days === 1 ? " (DATA IS FROM YESTERDAY - not updated today)" : ` (DATA IS ${days} DAYS OLD - not updated since)`;
               facts.push(`as of ${iso}${age}`);
             }
@@ -628,7 +630,7 @@ async function readEarthBlob(ns, key) {
         // say what changed, and their label follows current strength.
         const windMph = (typeof ev.magnitudeValue === "number" && /^kts?$/i.test(ev.magnitudeUnit || "")) ? Math.round((ev.magnitudeValue * 1.15078) / 5) * 5 : null;
         const title = kind === "storms" ? relabelStorm(ev.title || "", windMph) : (ev.title || "");
-        events.push({ id: ev.id, kind, title, summary: facts.join(", "), whyItMatters: why[ev.id] || "",
+        events.push({ id: ev.id, kind, title, summary: facts.join(", "), whyItMatters: why[ev.id] || "", dataAgeDays,
           ...(kind === "storms" ? { lat: typeof ev.lat === "number" ? ev.lat : null, lon: typeof ev.lon === "number" ? ev.lon : null, windMph } : {}) });
       }
     }
@@ -758,7 +760,22 @@ function pickTopEarthEvents(earth, max, staleIds = null) {
     const base = weight(e);
     return staleIds && staleIds.has(e.id) ? base - STALE_PENALTY : base;
   };
-  return earth.events.filter(hasReportableFact).sort((a, b) => weightWithStaleness(b) - weightWithStaleness(a)).slice(0, max);
+  // ADDED 2026-10-27: age-based selection for storms/fires/ice. The staleness
+  // penalty above never reached fires (only storms are fingerprinted), and the
+  // daily-changing "DATA IS N DAYS OLD" label kept even a frozen storm's line
+  // from matching yesterday's -- so Oct 15-26 episodes kept picking fires last
+  // updated 4-9 days earlier, and Oct 26 built its title and reflection around
+  // data age. Data 4+ days old is dropped (nothing current to say); 2-3 days
+  // old ranks below news. Quakes/volcanoes/news carry no dataAgeDays.
+  const DATA_AGE_DROP_DAYS = 4;
+  const DATA_AGE_PENALTY_DAYS = 2;
+  const DATA_AGE_PENALTY = 35;
+  const ranked = (e) => weightWithStaleness(e) - ((e.dataAgeDays || 0) >= DATA_AGE_PENALTY_DAYS ? DATA_AGE_PENALTY : 0);
+  return earth.events
+    .filter(hasReportableFact)
+    .filter((e) => !((e.dataAgeDays || 0) >= DATA_AGE_DROP_DAYS))
+    .sort((a, b) => ranked(b) - ranked(a))
+    .slice(0, max);
 }
 
 // ADDED 2026-08-23 (closing gap #1, continuity): read yesterday's stored
@@ -1097,7 +1114,11 @@ function auditClaims(script, claims, validIds, sourceText, reflection = "", quot
   // verbatim right after paraphrasing them. Any 10-word run shared with the
   // digest is a copy -- long enough that shared place names/titles don't trip it.
   const words = (t) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
-  const SHINGLE = 10;
+  // CHANGED 2026-10-27: 10 -> 14. At 10 the flag fired on 16 of 16 episodes
+  // Oct 10-26, almost all for one short factual phrase ("will pass in front of
+  // saturn on the evening of"), so it stopped meaning anything. 14 words in a
+  // row is real copying; the multi-run Oct 18 case still trips it.
+  const SHINGLE = 14;
   const srcWords = words(sourceText);
   const srcShingles = new Set();
   for (let i = 0; i + SHINGLE <= srcWords.length; i++) srcShingles.add(srcWords.slice(i, i + SHINGLE).join(" "));
@@ -1643,8 +1664,38 @@ async function fillMissingFields(env, digest, quote, script, diagnostics) {
   }
 }
 
+// ADDED 2026-10-27: the Oct 27 episode was lost to a single Anthropic HTTP 500
+// on this call, which had no retry. Retries transient failures only (429,
+// 5xx incl. 529 overloaded, network errors); a 4xx like 400 is a real
+// request problem and fails immediately. Waits honor retry-after, capped.
+const SCRIPT_RETRY_DELAYS_MS = [30000, 90000];
+const isTransientStatus = (s) => s === 429 || s >= 500;
+async function postScriptWithRetry(env, requestBody, diagnostics, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  for (let attempt = 1; ; attempt++) {
+    let res = null, failure;
+    try {
+      res = await postMessages(env, requestBody);
+      if (res.ok) {
+        if (attempt > 1) diagnostics.push({ step: "script-retry", ok: true, attempt });
+        return res;
+      }
+      const text = await res.text().catch(() => "");
+      failure = `Anthropic HTTP ${res.status}: ${text.slice(0, 200)}`;
+      if (!isTransientStatus(res.status)) throw new Error(failure);
+    } catch (err) {
+      if (res && !isTransientStatus(res.status)) throw err;
+      failure = failure || `Anthropic request failed: ${String(err.message || err).slice(0, 200)}`;
+    }
+    const delay = SCRIPT_RETRY_DELAYS_MS[attempt - 1];
+    diagnostics.push({ step: "script-retry", ok: false, attempt, error: failure, ...(delay !== undefined ? { retryInMs: delay } : {}) });
+    if (delay === undefined) throw new Error(`${failure} (after ${attempt} attempts)`);
+    const retryAfter = Number(res?.headers?.get?.("retry-after"));
+    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 120000) : delay);
+  }
+}
+
 async function generateScript(env, digest, quote, diagnostics) {
-  const res = await postMessages(env, {
+  const res = await postScriptWithRetry(env, {
     model: SCRIPT_MODEL,
     max_tokens: MAX_SCRIPT_TOKENS,
     thinking: { type: "adaptive" },
@@ -1660,11 +1711,7 @@ async function generateScript(env, digest, quote, diagnostics) {
       content: `Here is today's source material. Write the briefing.\n\n${digest}\n\nQUOTATION TO USE IN THE REFLECTION, verbatim, attributed to ${quote.who}:\n"${quote.text}"`
     }]
     // NOTE: no tools block. No web_search. This call must never search.
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Anthropic HTTP ${res.status}: ${body.slice(0, 200)}`);
-  }
+  }, diagnostics);
   const { data, text: reply } = await readMessage(env, res, { tag: "podcast:script", joiner: "\n" });
   diagnostics.push({
     step: "script", ok: true,
