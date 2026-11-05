@@ -540,9 +540,6 @@ export async function reconcile(env, data) {
     // (runProbes in status-deploy/index.js). If this cron disappears the
     // page only shows STALE — this is what turns that into an alert.
     { worker: "status", expected: "*/5 * * * *" },
-    // ADDED 2026-09-25: Pokemon Podcast (Daily Creature Clash, pokepod repo),
-    // reduced to monthly in Sep 2026.
-    { worker: "podcast", expected: "0 9 1 * *" },
     // ADDED 2026-09-25: stickers.stluker.com (IT sticker of the day) runs its
     // own native cron, like rails-beneath-us -- not a dispatcher task.
     { worker: "stickers", expected: "50 11 * * *" },
