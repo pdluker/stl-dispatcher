@@ -2,6 +2,10 @@
   "name": "stl-dispatcher",
   "main": "dispatcher.js",
   "compatibility_date": "2026-07-02",
+  // ADDED 2026-11-05: Earth and Orbit's Nov 5 script call got Anthropic 403
+  // "Request not allowed", the error reported when a Worker runs in a region
+  // Anthropic blocks. Pinning placement keeps runs near a supported region.
+  "placement": { "region": "aws:us-east-1" },
   // Declared explicitly Aug 6, 2026 -- without this key, `wrangler deploy`
   // silently defaults workers_dev to true and re-enables the unprotected
   // stl-dispatcher.pdluker.workers.dev route on every deploy, even after
