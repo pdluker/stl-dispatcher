@@ -103,7 +103,7 @@ export const FEEDS = [
   { name: "SpaceQ", url: "https://spaceq.ca/feed/", category: "Industry" },
   { name: "SpaceDaily", url: "https://www.spacedaily.com/spacedaily.xml", category: "General" },
   { name: "Phys.org Space", url: "https://phys.org/rss-feed/space-news/", category: "Astronomy" },
-  { name: "ESA", url: "https://www.esa.int/rssfeed/Our_Activities", category: "Mission" },
+  { name: "ESA", url: "https://www.esa.int/rss/news.rss", category: "Mission" },
   // REMOVED 2026-09-28, both confirmed by direct fetch:
   //   "Sky & Telescope" — https://skyandtelescope.org/feed/ now answers with a
   //     Cloudflare "Just a moment..." challenge (HTTP 403) to non-browser clients.

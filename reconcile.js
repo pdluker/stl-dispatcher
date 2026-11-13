@@ -550,7 +550,7 @@ export async function reconcile(env, data) {
   ];
   const trackedWorkers = [
     "stluker", "family", "stl-sports", "stl-music", "stl-bucket",
-    "fire-api", "pokelab", "ironrails",
+    "fire-api", "pokelab", "ironrails", "stl-grow",
     // "memory-lattice" REMOVED 2026-09-08: a live checkWorkerInventory run
     // flagged it as phantom_worker (the Worker no longer exists in
     // Cloudflare, only its R2 bucket memory-lattice-photos remains). Removing
